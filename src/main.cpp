@@ -13,7 +13,7 @@ static inline std::string trim(const std::string& s) {
 bool isValidToken(const std::string& token) {
     if (token == ".") return true;
     if (token.length() != 2) return false;
-    return (token[0] == 'w' || token[0] == 'b') && 
+    return (token[0] == 'w' || token[0] == 'b') &&
            (token[1] == 'K' || token[1] == 'Q' || token[1] == 'R' || token[1] == 'B' || token[1] == 'N' || token[1] == 'P');
 }
 
@@ -25,7 +25,6 @@ int main() {
     std::vector<std::vector<std::string>> boardData;
     size_t cols = 0;
 
-    // 1. קריאת הלוח
     while (std::getline(std::cin, line)) {
         line = trim(line);
         if (line == "Commands:") break;
@@ -41,9 +40,8 @@ int main() {
             row.push_back(token);
         }
         if (row.empty()) continue;
-        if (cols == 0) {
-            cols = row.size();
-        } else if (row.size() != cols) {
+        if (cols == 0) cols = row.size();
+        else if (row.size() != cols) {
             std::cout << "ERROR ROW_WIDTH_MISMATCH" << std::endl;
             return 0;
         }
@@ -51,7 +49,6 @@ int main() {
     }
     game.loadBoard(boardData);
 
-    // 2. קריאת פקודות
     while (std::getline(std::cin, line)) {
         line = trim(line);
         if (line.empty()) continue;
