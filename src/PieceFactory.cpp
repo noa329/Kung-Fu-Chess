@@ -11,6 +11,7 @@ std::shared_ptr<Piece> createPiece(const std::string& token) {
         case 'R': return std::make_shared<Rook>(color);
         case 'B': return std::make_shared<Bishop>(color);
         case 'N': return std::make_shared<Knight>(color);
-        default: return nullptr; // 'P' - עוד לא מומש באיטרציה הזו
+        case 'P': return std::make_shared<Pawn>(color); // תוקן
+        default: return nullptr;
     }
 }

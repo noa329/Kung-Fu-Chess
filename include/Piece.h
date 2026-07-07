@@ -11,6 +11,7 @@ public:
     virtual ~Piece() = default;
     char getColor() const { return color; }
     virtual bool isValidShape(const Position& from, const Position& to) const = 0;
+    virtual bool isSliding() const { return false; } // חדש: האם הכלי "גולש" ולכן חוסם/נחסם במסלול
     virtual std::string toString() const = 0;
 };
 #endif

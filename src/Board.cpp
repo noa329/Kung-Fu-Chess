@@ -31,6 +31,20 @@ void Board::setCell(int r, int c, std::shared_ptr<Piece> piece) {
     grid[r][c] = piece;
 }
 
+bool Board::isPathClear(const Position& from, const Position& to) const {
+    int dr = (to.row > from.row) ? 1 : (to.row < from.row) ? -1 : 0;
+    int dc = (to.col > from.col) ? 1 : (to.col < from.col) ? -1 : 0;
+
+    int r = from.row + dr;
+    int c = from.col + dc;
+    while (r != to.row || c != to.col) {
+        if (getCell(r, c) != nullptr) return false; // יש כלי בדרך
+        r += dr;
+        c += dc;
+    }
+    return true; // המסלול פנוי (לא כולל from ו-to עצמם)
+}
+
 void Board::print() const {
     for (size_t i = 0; i < grid.size(); ++i) {
         for (size_t j = 0; j < grid[i].size(); ++j) {
