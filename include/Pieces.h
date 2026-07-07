@@ -66,12 +66,19 @@ class Pawn : public Piece {
 public:
     Pawn(char c) : Piece(c) {}
     bool isValidShape(const Position& from, const Position& to) const override {
+        // הזזה רגילה: קדימה, עמודה זהה, צעד יחיד בלבד
         int dr = to.row - from.row;
-        int dc = std::abs(to.col - from.col);
-        int direction = (color == 'w') ? -1 : 1; // לבן זז "למעלה" (row קטן), שחור "למטה"
+        int dc = to.col - from.col;
+        int direction = (color == 'w') ? -1 : 1;
         return dc == 0 && dr == direction;
     }
-    // isSliding נשאר false - צעד יחיד, לא רלוונטי
+    bool isValidCapture(const Position& from, const Position& to) const override {
+        // אכילה: קדימה-אלכסון בלבד, צעד יחיד
+        int dr = to.row - from.row;
+        int dc = std::abs(to.col - from.col);
+        int direction = (color == 'w') ? -1 : 1;
+        return dc == 1 && dr == direction;
+    }
     std::string toString() const override { return std::string(1, color) + "P"; }
 };
 #endif

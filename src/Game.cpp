@@ -15,15 +15,14 @@ void Game::click(int x, int y) {
 
     if (cell) {
         if (cell->getColor() == selectedPiece->getColor()) {
-            // כלי ידידותי - מחליפים בחירה
-            selected = pos;
+            selected = pos; // כלי ידידותי - מחליפים בחירה
             return;
         }
         // כלי יריב - ניסיון אכילה
-        if (!selectedPiece->isValidShape(selected, pos)) return;
+        if (!selectedPiece->isValidCapture(selected, pos)) return;
         if (selectedPiece->isSliding() && !board.isPathClear(selected, pos)) return;
 
-        board.setCell(pos.row, pos.col, selectedPiece); // אכילה: הכלי היריב מוחלף
+        board.setCell(pos.row, pos.col, selectedPiece);
         board.setCell(selected.row, selected.col, nullptr);
         selected = {-1, -1};
         return;
