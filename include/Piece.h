@@ -12,9 +12,10 @@ public:
     char getColor() const { return color; }
     virtual bool isValidShape(const Position& from, const Position& to) const = 0;
     virtual bool isValidCapture(const Position& from, const Position& to) const {
-        return isValidShape(from, to); // ברירת מחדל: אכילה נראית כמו הזזה רגילה
+        return isValidShape(from, to);
     }
     virtual bool isSliding() const { return false; }
+    virtual bool isKing() const { return false; } 
     virtual std::string toString() const = 0;
 };
 #endif

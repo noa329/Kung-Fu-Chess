@@ -26,10 +26,11 @@ bool Game::hasPendingMoveOfOppositeColor(char color) const {
 void Game::resolveArrival(const PendingMove& pm) {
     auto occupant = board.getCell(pm.to.row, pm.to.col);
     if (occupant && occupant->getColor() == pm.piece->getColor()) {
-        // כלי ידידותי כבר נמצא ביעד - הגנה נוספת (לא אמור לקרות בזכות ההזמנה מראש)
-        return; // המהלך מתבטל, הכלי המקורי פשוט לא זז
+        return; // הגנה - לא אמור לקרות
     }
-    // תא ריק או כלי יריב (אכילה) - נוחתים כרגיל
+    if (occupant && occupant->isKing()) {
+        gameOver = true; // נאכל מלך - המשחק נגמר
+    }
     board.setCell(pm.to.row, pm.to.col, pm.piece);
     board.setCell(pm.from.row, pm.from.col, nullptr);
 }
@@ -63,7 +64,7 @@ bool Game::isMovementLegal(std::shared_ptr<Piece> piece, const Position& from,
     if (!validShape) return false;
     if (piece->isSliding() && !board.isPathClear(from, to)) return false;
     if (hasPendingMoveOfOppositeColor(piece->getColor())) return false;
-    if (hasPendingMoveTo(to)) return false; // היעד כבר "שמור" ע"י מהלך ממתין אחר
+    if (hasPendingMoveTo(to)) return false;
     return true;
 }
 
@@ -74,6 +75,7 @@ void Game::scheduleMove(const Position& from, const Position& to, std::shared_pt
 }
 
 void Game::click(int x, int y) {
+    if (gameOver) return; 
     Position pos = board.pixelToGrid(x, y);
     if (!board.isInside(pos.row, pos.col)) return;
     if (hasPendingMoveFrom(pos)) return;

@@ -11,6 +11,7 @@ public:
         int dc = std::abs(to.col - from.col);
         return dr <= 1 && dc <= 1 && (dr + dc > 0);
     }
+    bool isKing() const override { return true; } // חדש
     std::string toString() const override { return std::string(1, color) + "K"; }
 };
 

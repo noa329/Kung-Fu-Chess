@@ -17,13 +17,14 @@ class Game {
     Position selected = {-1, -1};
     long long currentTime = 0;
     std::vector<PendingMove> pendingMoves;
+    bool gameOver = false; 
     static const long long CELL_TRAVEL_TIME_MS = 1000;
 
     bool hasPendingMoveFrom(const Position& pos) const;
-    bool hasPendingMoveTo(const Position& pos) const;          
+    bool hasPendingMoveTo(const Position& pos) const;
     bool hasPendingMoveOfOppositeColor(char color) const;
     void finalizeReadyMoves();
-    void resolveArrival(const PendingMove& pm);                
+    void resolveArrival(const PendingMove& pm);
     bool isMovementLegal(std::shared_ptr<Piece> piece, const Position& from,
                           const Position& to, bool isCapture) const;
     long long calculateTravelTime(const Position& from, const Position& to) const;
