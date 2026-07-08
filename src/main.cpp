@@ -58,6 +58,9 @@ int main() {
         if (cmd == "click") {
             int x, y; ss >> x >> y;
             game.click(x, y);
+        } else if (cmd == "jump") {
+            int x, y; ss >> x >> y;
+            game.jump(x, y);
         } else if (cmd == "wait") {
             int ms; ss >> ms;
             game.wait(ms);
