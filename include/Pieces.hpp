@@ -1,7 +1,7 @@
 #ifndef PIECES_H
 #define PIECES_H
 #include <cstdlib>
-#include "Piece.h"
+#include "Piece.hpp"
 
 class King : public Piece {
 public:

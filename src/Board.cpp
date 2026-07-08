@@ -1,5 +1,5 @@
-#include "Board.h"
-#include "PieceFactory.h"
+#include "Board.hpp"
+#include "PieceFactory.hpp"
 #include <iostream>
 
 void Board::setGrid(const std::vector<std::vector<std::string>>& tokens) {

@@ -3,8 +3,8 @@
 #include <vector>
 #include <memory>
 #include <string>
-#include "Position.h"
-#include "Piece.h"
+#include "Position.hpp"
+#include "Piece.hpp"
 
 class Board {
     std::vector<std::vector<std::shared_ptr<Piece>>> grid;

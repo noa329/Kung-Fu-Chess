@@ -1,5 +1,5 @@
 #include "doctest.h"
-#include "../include/Board.h"
+#include "../include/Board.hpp"
 
 TEST_CASE("pixelToGrid converts pixels to cells correctly") {
     Board board;

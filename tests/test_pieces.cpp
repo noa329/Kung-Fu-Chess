@@ -1,5 +1,5 @@
 #include "doctest.h"
-#include "../include/Pieces.h"
+#include "../include/Pieces.hpp"
 
 TEST_CASE("King moves one step in any direction") {
     King king('w');

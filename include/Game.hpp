@@ -1,7 +1,7 @@
 #ifndef GAME_H
 #define GAME_H
-#include "Board.h"
-#include "Position.h"
+#include "Board.hpp"
+#include "Position.hpp"
 #include <vector>
 #include <memory>
 

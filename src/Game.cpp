@@ -1,5 +1,5 @@
-#include "Game.h"
-#include "Pieces.h"
+#include "Game.hpp"
+#include "Pieces.hpp"
 #include <algorithm>
 #include <cstdlib>
 
