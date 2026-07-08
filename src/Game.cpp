@@ -9,6 +9,13 @@ bool Game::hasPendingMoveFrom(const Position& pos) const {
     return false;
 }
 
+bool Game::hasPendingMoveTo(const Position& pos) const {
+    for (const auto& pm : pendingMoves) {
+        if (pm.to == pos) return true;
+    }
+    return false;
+}
+
 bool Game::hasPendingMoveOfOppositeColor(char color) const {
     for (const auto& pm : pendingMoves) {
         if (pm.piece->getColor() != color) return true;
@@ -16,11 +23,21 @@ bool Game::hasPendingMoveOfOppositeColor(char color) const {
     return false;
 }
 
+void Game::resolveArrival(const PendingMove& pm) {
+    auto occupant = board.getCell(pm.to.row, pm.to.col);
+    if (occupant && occupant->getColor() == pm.piece->getColor()) {
+        // כלי ידידותי כבר נמצא ביעד - הגנה נוספת (לא אמור לקרות בזכות ההזמנה מראש)
+        return; // המהלך מתבטל, הכלי המקורי פשוט לא זז
+    }
+    // תא ריק או כלי יריב (אכילה) - נוחתים כרגיל
+    board.setCell(pm.to.row, pm.to.col, pm.piece);
+    board.setCell(pm.from.row, pm.from.col, nullptr);
+}
+
 void Game::finalizeReadyMoves() {
     for (auto it = pendingMoves.begin(); it != pendingMoves.end(); ) {
         if (it->arrivalTime <= currentTime) {
-            board.setCell(it->to.row, it->to.col, it->piece);
-            board.setCell(it->from.row, it->from.col, nullptr);
+            resolveArrival(*it);
             it = pendingMoves.erase(it);
         } else {
             ++it;
@@ -45,7 +62,8 @@ bool Game::isMovementLegal(std::shared_ptr<Piece> piece, const Position& from,
     bool validShape = isCapture ? piece->isValidCapture(from, to) : piece->isValidShape(from, to);
     if (!validShape) return false;
     if (piece->isSliding() && !board.isPathClear(from, to)) return false;
-    if (hasPendingMoveOfOppositeColor(piece->getColor())) return false; // common route: אין תנועה בו-זמנית לצבעים מנוגדים
+    if (hasPendingMoveOfOppositeColor(piece->getColor())) return false;
+    if (hasPendingMoveTo(to)) return false; // היעד כבר "שמור" ע"י מהלך ממתין אחר
     return true;
 }
 
@@ -58,7 +76,7 @@ void Game::scheduleMove(const Position& from, const Position& to, std::shared_pt
 void Game::click(int x, int y) {
     Position pos = board.pixelToGrid(x, y);
     if (!board.isInside(pos.row, pos.col)) return;
-    if (hasPendingMoveFrom(pos)) return; // no redirect + no premove
+    if (hasPendingMoveFrom(pos)) return;
 
     auto cell = board.getCell(pos.row, pos.col);
 
