@@ -14,7 +14,8 @@ public:
     bool isInside(int r, int c) const;
     std::shared_ptr<Piece> getCell(int r, int c) const;
     void setCell(int r, int c, std::shared_ptr<Piece> piece);
-    bool isPathClear(const Position& from, const Position& to) const; // חדש
+    bool isPathClear(const Position& from, const Position& to) const;
+    int getRowCount() const; 
     void print() const;
 };
 #endif

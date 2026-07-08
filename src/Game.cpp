@@ -1,4 +1,5 @@
 #include "Game.h"
+#include "Pieces.h"
 #include <algorithm>
 #include <cstdlib>
 
@@ -26,13 +27,21 @@ bool Game::hasPendingMoveOfOppositeColor(char color) const {
 void Game::resolveArrival(const PendingMove& pm) {
     auto occupant = board.getCell(pm.to.row, pm.to.col);
     if (occupant && occupant->getColor() == pm.piece->getColor()) {
-        return; // הגנה - לא אמור לקרות
+        return;
     }
     if (occupant && occupant->isKing()) {
-        gameOver = true; // נאכל מלך - המשחק נגמר
+        gameOver = true;
     }
+
     board.setCell(pm.to.row, pm.to.col, pm.piece);
     board.setCell(pm.from.row, pm.from.col, nullptr);
+
+    if (pm.piece->isPawn()) {
+        int lastRow = (pm.piece->getColor() == 'w') ? 0 : board.getRowCount() - 1;
+        if (pm.to.row == lastRow) {
+            board.setCell(pm.to.row, pm.to.col, std::make_shared<Queen>(pm.piece->getColor()));
+        }
+    }
 }
 
 void Game::finalizeReadyMoves() {
@@ -60,7 +69,8 @@ long long Game::calculateTravelTime(const Position& from, const Position& to) co
 
 bool Game::isMovementLegal(std::shared_ptr<Piece> piece, const Position& from,
                             const Position& to, bool isCapture) const {
-    bool validShape = isCapture ? piece->isValidCapture(from, to) : piece->isValidShape(from, to);
+    int rows = board.getRowCount();
+    bool validShape = isCapture ? piece->isValidCapture(from, to, rows) : piece->isValidShape(from, to, rows);
     if (!validShape) return false;
     if (piece->isSliding() && !board.isPathClear(from, to)) return false;
     if (hasPendingMoveOfOppositeColor(piece->getColor())) return false;
@@ -75,7 +85,8 @@ void Game::scheduleMove(const Position& from, const Position& to, std::shared_pt
 }
 
 void Game::click(int x, int y) {
-    if (gameOver) return; 
+    if (gameOver) return;
+
     Position pos = board.pixelToGrid(x, y);
     if (!board.isInside(pos.row, pos.col)) return;
     if (hasPendingMoveFrom(pos)) return;

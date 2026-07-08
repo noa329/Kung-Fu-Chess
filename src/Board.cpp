@@ -54,3 +54,7 @@ void Board::print() const {
         std::cout << std::endl;
     }
 }
+
+int Board::getRowCount() const {
+    return (int)grid.size();
+}
