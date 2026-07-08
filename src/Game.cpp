@@ -1,8 +1,17 @@
 #include "Game.h"
+#include <algorithm>
+#include <cstdlib>
 
 bool Game::hasPendingMoveFrom(const Position& pos) const {
     for (const auto& pm : pendingMoves) {
         if (pm.from == pos) return true;
+    }
+    return false;
+}
+
+bool Game::hasPendingMoveOfOppositeColor(char color) const {
+    for (const auto& pm : pendingMoves) {
+        if (pm.piece->getColor() != color) return true;
     }
     return false;
 }
@@ -24,14 +33,37 @@ void Game::wait(int ms) {
     finalizeReadyMoves();
 }
 
+long long Game::calculateTravelTime(const Position& from, const Position& to) const {
+    int dr = std::abs(to.row - from.row);
+    int dc = std::abs(to.col - from.col);
+    int cellDistance = std::max(dr, dc);
+    return cellDistance * CELL_TRAVEL_TIME_MS;
+}
+
+bool Game::isMovementLegal(std::shared_ptr<Piece> piece, const Position& from,
+                            const Position& to, bool isCapture) const {
+    bool validShape = isCapture ? piece->isValidCapture(from, to) : piece->isValidShape(from, to);
+    if (!validShape) return false;
+    if (piece->isSliding() && !board.isPathClear(from, to)) return false;
+    if (hasPendingMoveOfOppositeColor(piece->getColor())) return false; // common route: אין תנועה בו-זמנית לצבעים מנוגדים
+    return true;
+}
+
+void Game::scheduleMove(const Position& from, const Position& to, std::shared_ptr<Piece> piece) {
+    long long arrival = currentTime + calculateTravelTime(from, to);
+    pendingMoves.push_back({from, to, arrival, piece});
+    selected = {-1, -1};
+}
+
 void Game::click(int x, int y) {
     Position pos = board.pixelToGrid(x, y);
     if (!board.isInside(pos.row, pos.col)) return;
+    if (hasPendingMoveFrom(pos)) return; // no redirect + no premove
 
     auto cell = board.getCell(pos.row, pos.col);
 
     if (selected.row == -1) {
-        if (cell && !hasPendingMoveFrom(pos)) selected = pos;
+        if (cell) selected = pos;
         return;
     }
 
@@ -39,22 +71,16 @@ void Game::click(int x, int y) {
 
     if (cell) {
         if (cell->getColor() == selectedPiece->getColor()) {
-            if (!hasPendingMoveFrom(pos)) selected = pos; // כלי ידידותי - מחליפים בחירה
+            selected = pos;
             return;
         }
-        // כלי יריב - ניסיון אכילה
-        if (!selectedPiece->isValidCapture(selected, pos)) return;
-        if (selectedPiece->isSliding() && !board.isPathClear(selected, pos)) return;
-
-        pendingMoves.push_back({selected, pos, currentTime + MOVE_DURATION_MS, selectedPiece});
-        selected = {-1, -1};
+        if (isMovementLegal(selectedPiece, selected, pos, /*isCapture=*/true)) {
+            scheduleMove(selected, pos, selectedPiece);
+        }
         return;
     }
 
-    // תא ריק - הזזה רגילה
-    if (!selectedPiece->isValidShape(selected, pos)) return;
-    if (selectedPiece->isSliding() && !board.isPathClear(selected, pos)) return;
-
-    pendingMoves.push_back({selected, pos, currentTime + MOVE_DURATION_MS, selectedPiece});
-    selected = {-1, -1};
+    if (isMovementLegal(selectedPiece, selected, pos, /*isCapture=*/false)) {
+        scheduleMove(selected, pos, selectedPiece);
+    }
 }
