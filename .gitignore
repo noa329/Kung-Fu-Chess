@@ -7,3 +7,7 @@ kungfu_chess
 
 # קבצי אובייקט (אם תצרי כאלה בעתיד)
 *.o
+# Coverage and build files
+*.gcda
+*.gcno
+run_tests.exe
