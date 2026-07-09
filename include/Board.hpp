@@ -8,7 +8,11 @@
 
 class Board {
     std::vector<std::vector<std::shared_ptr<Piece>>> grid;
+    int cellPixelSize = 100;
 public:
+    Board() = default;
+    explicit Board(int cellSize) : cellPixelSize(cellSize) {}
+    
     void setGrid(const std::vector<std::vector<std::string>>& tokens);
     Position pixelToGrid(int x, int y) const;
     bool isInside(int r, int c) const;
