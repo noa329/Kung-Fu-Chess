@@ -14,8 +14,8 @@ void Board::setGrid(const std::vector<std::vector<std::string>>& tokens) {
 }
 
 Position Board::pixelToGrid(int x, int y) const {
-    int r = (y >= 0) ? y / 100 : (y - 99) / 100;
-    int c = (x >= 0) ? x / 100 : (x - 99) / 100;
+    int r = (y >= 0) ? y / cellPixelSize : (y - (cellPixelSize - 1)) / cellPixelSize;
+    int c = (x >= 0) ? x / cellPixelSize : (x - (cellPixelSize - 1)) / cellPixelSize;
     return {r, c};
 }
 
