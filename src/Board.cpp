@@ -13,12 +13,6 @@ void Board::setGrid(const std::vector<std::vector<std::string>>& tokens) {
     }
 }
 
-Position Board::pixelToGrid(int x, int y) const {
-    int r = (y >= 0) ? y / cellPixelSize : (y - (cellPixelSize - 1)) / cellPixelSize;
-    int c = (x >= 0) ? x / cellPixelSize : (x - (cellPixelSize - 1)) / cellPixelSize;
-    return {r, c};
-}
-
 bool Board::isInside(int r, int c) const {
     return r >= 0 && r < (int)grid.size() && c >= 0 && c < (int)grid[0].size();
 }
