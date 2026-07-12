@@ -1,5 +1,6 @@
 #include "Game.hpp"
 #include "Pieces.hpp"
+#include "MovementRules.hpp"
 #include <algorithm>
 #include <cstdlib>
 
@@ -99,9 +100,12 @@ long long Game::calculateTravelTime(const Position& from, const Position& to, bo
 bool Game::isMovementLegal(std::shared_ptr<Piece> piece, const Position& from,
                             const Position& to, bool isCapture) const {
     int rows = board.getRowCount();
-    bool validShape = isCapture ? piece->isValidCapture(from, to, rows) : piece->isValidShape(from, to, rows);
+    PieceKind kind = piece->getKind();
+    char color = piece->getColor();
+    bool validShape = isCapture ? MovementRules::isValidCapture(kind, color, from, to, rows)
+                                 : MovementRules::isValidShape(kind, color, from, to, rows);
     if (!validShape) return false;
-    if (piece->isSliding() && !board.isPathClear(from, to)) return false;
+    if (MovementRules::isSliding(kind) && !board.isPathClear(from, to)) return false;
     if (hasPendingMoveOfOppositeColor(piece->getColor())) return false;
     if (hasPendingMoveTo(to)) return false;
     return true;
