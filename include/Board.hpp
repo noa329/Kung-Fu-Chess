@@ -20,6 +20,7 @@ public:
     void setCell(int r, int c, std::shared_ptr<Piece> piece);
     bool isPathClear(const Position& from, const Position& to) const;
     int getRowCount() const; 
+    int getColCount() const;
     void print() const;
 };
 #endif

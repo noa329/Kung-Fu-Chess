@@ -58,3 +58,7 @@ void Board::print() const {
 int Board::getRowCount() const {
     return (int)grid.size();
 }
+
+int Board::getColCount() const {
+    return grid.empty() ? 0 : (int)grid[0].size();
+}

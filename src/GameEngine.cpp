@@ -1,38 +1,34 @@
-#include "Game.hpp"
+#include "GameEngine.hpp"
 #include "Pieces.hpp"
 #include "RuleEngine.hpp"
 #include <algorithm>
 #include <cstdlib>
 
-void Game::applyCaptureEvents(const std::vector<CaptureEvent>& events) {
-    // GameEngine-level decision: אכילת מלך מסיימת את המשחק. הדיווח עצמו
-    // (מי נאכל, האם זה היה מלך) מגיע מ-RealTimeArbiter; ההחלטה מה המשמעות
-    // של זה שייכת לכאן.
+void GameEngine::applyCaptureEvents(const std::vector<CaptureEvent>& events) {
+    // החלטה של GameEngine: אכילת מלך מסיימת את המשחק. הדיווח עצמו
+    // (מי נאכל, האם זה היה מלך) מגיע מ-RealTimeArbiter.
     for (const auto& e : events) {
         if (e.wasKing) gameOver = true;
     }
 }
 
-bool Game::isMovementLegal(std::shared_ptr<Piece> piece, const Position& from,
-                            const Position& to, bool isCapture) const {
-    // חוקיות שחמט טהורה (צורה + מסלול פנוי) מואצלת ל-RuleEngine.
+bool GameEngine::isMovementLegal(std::shared_ptr<Piece> piece, const Position& from,
+                                  const Position& to, bool isCapture) const {
     RuleEngine engine(board);
     if (!engine.isLegal(piece, from, to, isCapture)) return false;
 
-    // מצב תנועות ממתינות (RealTimeArbiter).
     if (arbiter.hasPendingMoveOfOppositeColor(piece->getColor())) return false;
     if (arbiter.hasPendingMoveTo(to)) return false;
     return true;
 }
 
-void Game::wait(int ms) {
+void GameEngine::wait(int ms) {
     auto events = arbiter.advance(ms);
     applyCaptureEvents(events);
 }
 
-void Game::jump(int x, int y) {
+void GameEngine::jump(const Position& pos) {
     if (gameOver) return;
-    Position pos = board.pixelToGrid(x, y);
     if (!board.isInside(pos.row, pos.col)) return;
 
     auto piece = board.getCell(pos.row, pos.col);
@@ -44,10 +40,8 @@ void Game::jump(int x, int y) {
     selected = {-1, -1};
 }
 
-void Game::click(int x, int y) {
+void GameEngine::select(const Position& pos) {
     if (gameOver) return;
-
-    Position pos = board.pixelToGrid(x, y);
     if (!board.isInside(pos.row, pos.col)) return;
     if (arbiter.hasPendingMoveFrom(pos)) return;
 
@@ -76,4 +70,21 @@ void Game::click(int x, int y) {
         arbiter.scheduleMove(selected, pos, selectedPiece, /*isCapture=*/false);
         selected = {-1, -1};
     }
+}
+
+GameSnapshot GameEngine::snapshot() const {
+    GameSnapshot snap;
+    snap.selected = selected;
+    snap.gameOver = gameOver;
+    int rows = board.getRowCount();
+    int cols = board.getColCount();
+    snap.boardTokens.resize(rows);
+    for (int r = 0; r < rows; ++r) {
+        snap.boardTokens[r].resize(cols);
+        for (int c = 0; c < cols; ++c) {
+            auto piece = board.getCell(r, c);
+            snap.boardTokens[r][c] = piece ? piece->toString() : ".";
+        }
+    }
+    return snap;
 }

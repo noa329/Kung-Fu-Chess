@@ -17,3 +17,10 @@ TEST_CASE("isInside detects out-of-bounds correctly") {
     CHECK(board.isInside(5, 5) == false);
     CHECK(board.isInside(-1, 0) == false);
 }
+
+TEST_CASE("getColCount reports the board width") {
+    Board board;
+    board.setGrid({{".", ".", "."}, {".", ".", "."}});
+    CHECK(board.getColCount() == 3);
+    CHECK(board.getRowCount() == 2);
+}
