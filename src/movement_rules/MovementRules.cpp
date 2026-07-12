@@ -1,4 +1,4 @@
-#include "MovementRules.hpp"
+#include "movement_rules/MovementRules.hpp"
 #include <cstdlib>
 
 namespace {

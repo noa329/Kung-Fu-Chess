@@ -1,6 +1,6 @@
 #include "doctest.h"
-#include "../include/Controller.hpp"
-#include "../include/GameEngine.hpp"
+#include "../include/controller/Controller.hpp"
+#include "../include/game_engine/GameEngine.hpp"
 
 // שכבת Controller: פירוש קליקים (פיקסל -> Position) ותרגומם לפקודות
 // ל-GameEngine. אין כאן חוקיות שחמט, שינוי Board ישיר, רינדור, או תזמון.

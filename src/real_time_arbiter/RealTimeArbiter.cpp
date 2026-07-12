@@ -1,5 +1,5 @@
-#include "RealTimeArbiter.hpp"
-#include "Pieces.hpp"
+#include "real_time_arbiter/RealTimeArbiter.hpp"
+#include "model/Pieces.hpp"
 #include <algorithm>
 #include <cstdlib>
 

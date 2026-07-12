@@ -1,8 +1,8 @@
 #ifndef PIECE_H
 #define PIECE_H
 #include <string>
-#include "Position.hpp"
-#include "PieceKind.hpp"
+#include "model/Position.hpp"
+#include "model/PieceKind.hpp"
 
 // שכבת Model: זהות כלי בלבד. אין כאן שום כלל תנועה - זה תפקידה
 // של שכבת MovementRules (ראו MovementRules.hpp).

@@ -2,8 +2,8 @@
 #define TEXT_TEST_RUNNER_H
 #include <istream>
 #include <ostream>
-#include "GameEngine.hpp"
-#include "Controller.hpp"
+#include "game_engine/GameEngine.hpp"
+#include "controller/Controller.hpp"
 
 // שכבת TextTestRunner (ראו טבלת בעלות השכבות):
 // בעלות: פירוש סקריפט והפעלת נתיב הפקודות הציבורי.

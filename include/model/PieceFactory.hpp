@@ -2,7 +2,7 @@
 #define PIECE_FACTORY_H
 #include <memory>
 #include <string>
-#include "Piece.hpp"
+#include "model/Piece.hpp"
 
 std::shared_ptr<Piece> createPiece(const std::string& token);
 #endif

@@ -1,4 +1,4 @@
-#include "Renderer.hpp"
+#include "renderer/Renderer.hpp"
 
 void Renderer::render(const GameSnapshot& snapshot, std::ostream& out) const {
     out << "   ";

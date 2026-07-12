@@ -1,6 +1,6 @@
 #ifndef PIECES_H
 #define PIECES_H
-#include "Piece.hpp"
+#include "model/Piece.hpp"
 
 // שכבת Model: כל מחלקה כאן מזהה רק *מה* הכלי הוא (סוג + ייצוג טקסטואלי).
 // *איך* הכלי זז נמצא במלואו ב-MovementRules.cpp.

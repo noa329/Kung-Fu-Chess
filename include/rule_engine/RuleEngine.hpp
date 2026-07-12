@@ -1,9 +1,9 @@
 #ifndef RULE_ENGINE_H
 #define RULE_ENGINE_H
 #include <memory>
-#include "Board.hpp"
-#include "Piece.hpp"
-#include "Position.hpp"
+#include "model/Board.hpp"
+#include "model/Piece.hpp"
+#include "model/Position.hpp"
 
 // שכבת RuleEngine (ראו טבלת בעלות השכבות):
 // בעלות: אימות חוקיות מהלך מבוקש, קריאה בלבד.

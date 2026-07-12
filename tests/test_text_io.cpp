@@ -1,6 +1,6 @@
 #include "doctest.h"
-#include "../include/BoardParser.hpp"
-#include "../include/BoardPrinter.hpp"
+#include "../include/text_io/BoardParser.hpp"
+#include "../include/text_io/BoardPrinter.hpp"
 #include <sstream>
 
 // שכבת Text I/O: BoardParser (פירוש הגדרת לוח טקסטואלית) ו-BoardPrinter

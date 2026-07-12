@@ -1,7 +1,7 @@
 #include <iostream>
-#include "GameEngine.hpp"
-#include "BoardParser.hpp"
-#include "TextTestRunner.hpp"
+#include "game_engine/GameEngine.hpp"
+#include "text_io/BoardParser.hpp"
+#include "text_test_runner/TextTestRunner.hpp"
 
 int main() {
     std::ios_base::sync_with_stdio(false);

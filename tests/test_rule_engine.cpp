@@ -1,7 +1,7 @@
 #include "doctest.h"
-#include "../include/RuleEngine.hpp"
-#include "../include/Board.hpp"
-#include "../include/Pieces.hpp"
+#include "../include/rule_engine/RuleEngine.hpp"
+#include "../include/model/Board.hpp"
+#include "../include/model/Pieces.hpp"
 
 // שכבת RuleEngine: מאמתת חוקיות מהלך מבוקש מול מצב הלוח הנוכחי - קריאה בלבד.
 // לא יודעת כלום על תנועות ממתינות/זמן (זה RealTimeArbiter) ולא משנה את הלוח.

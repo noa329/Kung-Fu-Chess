@@ -1,7 +1,7 @@
 #ifndef CONTROLLER_H
 #define CONTROLLER_H
-#include "GameEngine.hpp"
-#include "Position.hpp"
+#include "game_engine/GameEngine.hpp"
+#include "model/Position.hpp"
 
 // שכבת Controller (ראו טבלת בעלות השכבות):
 // בעלות: פירוש קליקים ומצב תא נבחר.

@@ -1,5 +1,5 @@
-#include "../include/PieceFactory.hpp"
-#include "../include/Pieces.hpp"
+#include "model/PieceFactory.hpp"
+#include "model/Pieces.hpp"
 
 std::shared_ptr<Piece> createPiece(const std::string& token) {
     if (token == ".") return nullptr;

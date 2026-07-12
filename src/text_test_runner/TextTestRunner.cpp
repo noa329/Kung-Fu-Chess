@@ -1,5 +1,5 @@
-#include "TextTestRunner.hpp"
-#include "BoardPrinter.hpp"
+#include "text_test_runner/TextTestRunner.hpp"
+#include "text_io/BoardPrinter.hpp"
 #include <sstream>
 
 namespace {

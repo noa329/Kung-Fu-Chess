@@ -1,5 +1,5 @@
 #include "doctest.h"
-#include "../include/Board.hpp"
+#include "../include/model/Board.hpp"
 
 TEST_CASE("isInside detects out-of-bounds correctly") {
     std::vector<std::vector<std::string>> grid = {{".", "."}, {".", "."}};
