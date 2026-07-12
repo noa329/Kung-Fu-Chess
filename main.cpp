@@ -3,6 +3,12 @@
 #include <vector>
 #include "GameEngine.hpp"
 #include "Controller.hpp"
+#include "BoardParser.hpp"
+#include "BoardPrinter.hpp"
+
+// TextTestRunner (מריץ בדיקות טקסט ללא UI אמיתי): פירוש הגדרת הלוח
+// מואצל ל-BoardParser, הדפסתו ל-BoardPrinter, וביצוע הפקודות דרך
+// ה-API הציבורי של Controller/GameEngine בלבד.
 
 static inline std::string trim(const std::string& s) {
     size_t start = s.find_first_not_of(" \t\r\n");
@@ -11,46 +17,21 @@ static inline std::string trim(const std::string& s) {
     return s.substr(start, end - start + 1);
 }
 
-bool isValidToken(const std::string& token) {
-    if (token == ".") return true;
-    if (token.length() != 2) return false;
-    return (token[0] == 'w' || token[0] == 'b') &&
-           (token[1] == 'K' || token[1] == 'Q' || token[1] == 'R' || token[1] == 'B' || token[1] == 'N' || token[1] == 'P');
-}
-
 int main() {
     std::ios_base::sync_with_stdio(false);
     std::cin.tie(NULL);
+
+    auto boardResult = BoardParser::parse(std::cin);
+    if (!boardResult.ok) {
+        std::cout << boardResult.error << std::endl;
+        return 0;
+    }
+
     GameEngine game;
     Controller controller(game);
+    game.loadBoard(boardResult.tokens);
+
     std::string line;
-    std::vector<std::vector<std::string>> boardData;
-    size_t cols = 0;
-
-    while (std::getline(std::cin, line)) {
-        line = trim(line);
-        if (line == "Commands:") break;
-        if (line == "Board:" || line.empty()) continue;
-        std::stringstream ss(line);
-        std::string token;
-        std::vector<std::string> row;
-        while (ss >> token) {
-            if (!isValidToken(token)) {
-                std::cout << "ERROR UNKNOWN_TOKEN" << std::endl;
-                return 0;
-            }
-            row.push_back(token);
-        }
-        if (row.empty()) continue;
-        if (cols == 0) cols = row.size();
-        else if (row.size() != cols) {
-            std::cout << "ERROR ROW_WIDTH_MISMATCH" << std::endl;
-            return 0;
-        }
-        boardData.push_back(row);
-    }
-    game.loadBoard(boardData);
-
     while (std::getline(std::cin, line)) {
         line = trim(line);
         if (line.empty()) continue;
@@ -67,7 +48,7 @@ int main() {
             int ms; ss >> ms;
             game.wait(ms);
         } else if (line == "print board") {
-            game.printBoard();
+            BoardPrinter::print(game.snapshot().boardTokens, std::cout);
         }
     }
     return 0;

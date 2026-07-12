@@ -44,8 +44,5 @@ public:
     void wait(int ms);
 
     GameSnapshot snapshot() const;
-
-    // זמני: יוסר בשלב ה-Text I/O (7), כרגע עדיין נשען על Board::print.
-    void printBoard() const { board.print(); }
 };
 #endif

@@ -18,6 +18,5 @@ public:
     bool isPathClear(const Position& from, const Position& to) const;
     int getRowCount() const; 
     int getColCount() const;
-    void print() const;
 };
 #endif

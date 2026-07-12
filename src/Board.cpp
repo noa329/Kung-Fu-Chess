@@ -1,6 +1,5 @@
 #include "Board.hpp"
 #include "PieceFactory.hpp"
-#include <iostream>
 
 void Board::setGrid(const std::vector<std::vector<std::string>>& tokens) {
     grid.clear();
@@ -37,16 +36,6 @@ bool Board::isPathClear(const Position& from, const Position& to) const {
         c += dc;
     }
     return true; // המסלול פנוי (לא כולל from ו-to עצמם)
-}
-
-void Board::print() const {
-    for (size_t i = 0; i < grid.size(); ++i) {
-        for (size_t j = 0; j < grid[i].size(); ++j) {
-            std::cout << (grid[i][j] ? grid[i][j]->toString() : ".")
-                       << (j == grid[i].size() - 1 ? "" : " ");
-        }
-        std::cout << std::endl;
-    }
 }
 
 int Board::getRowCount() const {
