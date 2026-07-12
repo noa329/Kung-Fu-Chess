@@ -1,6 +1,7 @@
 #include "Game.hpp"
 #include "Pieces.hpp"
 #include "MovementRules.hpp"
+#include "RuleEngine.hpp"
 #include <algorithm>
 #include <cstdlib>
 
@@ -99,13 +100,12 @@ long long Game::calculateTravelTime(const Position& from, const Position& to, bo
 
 bool Game::isMovementLegal(std::shared_ptr<Piece> piece, const Position& from,
                             const Position& to, bool isCapture) const {
-    int rows = board.getRowCount();
-    PieceKind kind = piece->getKind();
-    char color = piece->getColor();
-    bool validShape = isCapture ? MovementRules::isValidCapture(kind, color, from, to, rows)
-                                 : MovementRules::isValidShape(kind, color, from, to, rows);
-    if (!validShape) return false;
-    if (MovementRules::isSliding(kind) && !board.isPathClear(from, to)) return false;
+    // חוקיות שחמט טהורה (צורה + מסלול פנוי) מואצלת ל-RuleEngine.
+    RuleEngine engine(board);
+    if (!engine.isLegal(piece, from, to, isCapture)) return false;
+
+    // בדיקות אלה שייכות בפועל ל-RealTimeArbiter (מצב תנועות ממתינות) -
+    // יוצאו מכאן בשלב הבא. נשארות זמנית ב-Game כדי לא לשבור התנהגות.
     if (hasPendingMoveOfOppositeColor(piece->getColor())) return false;
     if (hasPendingMoveTo(to)) return false;
     return true;

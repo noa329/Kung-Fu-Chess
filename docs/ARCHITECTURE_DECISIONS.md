@@ -30,3 +30,28 @@
 **בדיקות:** `tests/test_movement_rules.cpp` (חדש) - 8 מקרי בדיקה,
 25 assertions, מבודדים לגמרי מ-`Piece`/`Board`. `tests/test_pieces.cpp`
 הישן הוסר כי הכיסוי שלו עבר במלואו למודול החדש.
+
+## שלב 2: הפרדת שכבת RuleEngine
+
+**מה נעשה:** נוספה מחלקה `RuleEngine` שמחזיקה `const Board&` ומאמתת
+חוקיות מהלך מבוקש (צורה דרך `MovementRules` + מסלול פנוי דרך
+`Board::isPathClear`) - קריאה בלבד, בלי לשנות כלום. `Game::isMovementLegal`
+מאציל אליה את בדיקת "האם המהלך חוקי מבחינת שחמט" ומשאיר אצלו רק את
+הבדיקות שקשורות לתנועות ממתינות (`hasPendingMoveOfOppositeColor`,
+`hasPendingMoveTo`).
+
+**למה:** לפי טבלת הבעלות, RuleEngine אחראי רק על "אימות חוקיות מהלך
+מבוקש, קריאה בלבד" ואסור לו לדעת על תנועות ממתינות/זמן - זה תפקיד
+RealTimeArbiter. ההפרדה הזו חושפת בבירור את הגבול: `RuleEngine` ניתן
+לבדיקה עם `Board` בלבד (ראו `tests/test_rule_engine.cpp`), בלי שום
+תלות ב-`Game` או בזמן מדומה.
+
+**החלטה מכוונת:** `hasPendingMoveOfOppositeColor`/`hasPendingMoveTo`
+**נשארו זמנית** ב-`Game`, למרות שלפי הטבלה הם שייכים ל-`RealTimeArbiter`.
+הזזתם דורשת קודם להוציא את כל מנגנון ה-pendingMoves/airbornePieces
+מ-`Game` (שלב 3) - ניסיון להזיז רק את הבדיקות עכשיו בלי המבנה שמאחוריהן
+היה יוצר תלות מעגלית מיותרת. מסומן בקוד בהערה מפורשת.
+
+**בדיקות:** `tests/test_rule_engine.cpp` (חדש) - 5 מקרי בדיקה, 7
+assertions, בונות `Board` ישירות ובודקות את `RuleEngine` בבידוד מ-`Game`.
+כל 17 מקרי הבדיקה בפרויקט (41 assertions) ירוקים לפני ואחרי.
