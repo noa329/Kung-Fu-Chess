@@ -55,3 +55,32 @@ RealTimeArbiter. ההפרדה הזו חושפת בבירור את הגבול: `R
 **בדיקות:** `tests/test_rule_engine.cpp` (חדש) - 5 מקרי בדיקה, 7
 assertions, בונות `Board` ישירות ובודקות את `RuleEngine` בבידוד מ-`Game`.
 כל 17 מקרי הבדיקה בפרויקט (41 assertions) ירוקים לפני ואחרי.
+
+## שלב 3: הפרדת שכבת RealTimeArbiter
+
+**מה נעשה:** כל מנגנון הזמן-אמת - `PendingMove`, `AirborneState`,
+`currentTime`, `calculateTravelTime`, `resolveArrival`,
+`finalizeReadyMoves`, `finalizeAirborne` - יצא מ-`Game` למחלקה חדשה
+`RealTimeArbiter`. `RealTimeArbiter` מחזיק `Board&` (לא const - הוא
+כן מזיז כלים בפועל בעת פתרון הגעה) ומספק API: `scheduleMove`,
+`scheduleJump`, `hasPendingMoveFrom/To/OfOppositeColor`, `isAirborne`,
+ו-`advance(ms)` שמקדם את הזמן ומחזיר `vector<CaptureEvent>`.
+
+**למה:** לפי טבלת הבעלות, RealTimeArbiter אחראי על "אובייקטי Motion
+פעילים, קידום זמן מדומה, פתרון הגעה, ואירועי אכילה" ואסור לו להחליט
+"המשחק נגמר" - זו אחריות GameEngine. לכן `resolveArrival` **לא** קובע
+`gameOver` בעצמו יותר; הוא מדווח `CaptureEvent{at, capturedColor,
+wasKing}` והחלטת "אכילת מלך מסיימת משחק" עברה ל-`Game::applyCaptureEvents`
+(תפקיד ה-GameEngine, שעדיין גר בתוך `Game` - יופרד רשמית בשלב הבא).
+
+**החלטה מכוונת נוספת:** הרחבתי מעט את הדיווח - כל אכילה (לא רק אכילת
+מלך) מייצרת כעת `CaptureEvent`, לא רק כשהמלך נאכל. זה לא שינוי התנהגות
+בלוח (הלוח מתנהג זהה לחלוטין - כל הבדיקות הישנות עברו ללא שינוי), רק
+תשתית דיווח כללית יותר שתשרת בעתיד תכונות כמו לוג אכילות/מונה נקודות,
+בלי לדרוש שינוי חוזי נוסף ב-API.
+
+**בדיקות:** `tests/test_real_time_arbiter.cpp` (חדש) - 8 מקרי בדיקה,
+19 assertions, כולל המקרה העדין של אכילת כלי מרחף באוויר ואת דיווח
+אכילת המלך. כל 25 מקרי הבדיקה בפרויקט (60 assertions) ירוקים לפני
+ואחרי, והרצתי גם בדיקת עשן (`Board:`/`Commands:` דרך stdin) על
+הבינארי האמיתי כדי לוודא שההתנהגות מקצה לקצה זהה למה שהייתה.
