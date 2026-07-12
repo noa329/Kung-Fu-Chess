@@ -6,8 +6,11 @@
 // שכבת Movement Rules (ראו טבלת בעלות השכבות):
 // בעלות: גיאומטריית תנועה לכל סוג כלי, מחושבת מנתוני קלט טהורים (kind, color, from, to, boardRows).
 // אסור לה: פקודות משחק, זמן חלוף, אנימציה, רינדור, או טיפול בקלט.
-// שימו לב: אין כאן שום תלות ב-Board או ב-Piece - רק טיפוסים בסיסיים,
-// כדי שהשכבה תהיה ניתנת לבדיקה לגמרי בבידוד.
+//
+// המימוש הפנימי הוא Strategy pattern: כל כלי הוא מחלקה נפרדת שמממשת
+// IMovementStrategy (ראו movement_rules/*.hpp), ו-MovementRules הוא
+// פאסאד דק מעליהן שמפנה ל-getMovementStrategy(kind). ה-API הציבורי
+// כאן לא השתנה - קוד קורא קיים (RuleEngine ואחרים) לא מרגיש הבדל.
 namespace MovementRules {
     // האם הצורה הגיאומטרית של from->to חוקית לסוג כלי זה (בלי אכילה).
     bool isValidShape(PieceKind kind, char color, const Position& from, const Position& to, int boardRows);

@@ -261,3 +261,37 @@ board`) חיה קודם ישירות בתוך `main()`. הוצאתי אותה ל
 התנהגות) - הרצתי מחדש את כל 41 מקרי הבדיקה (80 assertions) אחרי
 המעבר, כולל בנייה עם ה-`Makefile` האמיתי של הפרויקט (לא רק פקודת
 `g++` ידנית), ווידאתי גם את הבינארי הראשי מקצה לקצה. הכל ירוק וזהה.
+
+## שלב תוספת: Strategy pattern בתוך Movement Rules
+
+**מה נעשה:** `MovementRules.cpp` (switch מרכזי עם פונקציות פרטיות
+לכל כלי) פורק ל-Strategy pattern אמיתי: ממשק `IMovementStrategy`
+(`isValidShape`, `isValidCapture` עם ברירת מחדל, `isSliding`),
+ומחלקה נפרדת לכל כלי - `KingMovement`, `QueenMovement`,
+`RookMovement`, `BishopMovement`, `KnightMovement`, `PawnMovement` -
+כל אחת בקובץ `.hpp`/`.cpp` משלה תחת `movement_rules/`.
+`MovementStrategyFactory::getMovementStrategy(kind)` מחזיר רפרנס
+לאובייקט סטטי (Meyer's singleton, ללא הקצאה) לפי `PieceKind`.
+`MovementRules` (ה-namespace הישן) הפך לפאסאד דק שמאציל לפקטורי -
+**ה-API הציבורי שלו לא השתנה כלל**, כך שקוד קורא קיים (`RuleEngine`)
+והבדיקות הקיימות (`test_movement_rules.cpp`) נשארו בדיוק כפי שהיו.
+
+**למה:** זו הדוגמה הכי ברורה בפרויקט ל-Open/Closed Principle. הוספת
+כלי חדש (למשל "Archbishop") בעתיד לא תדרוש לגעת בשום מחלקה קיימת -
+רק להוסיף מחלקה חדשה שמממשת `IMovementStrategy` ולרשום אותה בפקטורי.
+זה גם הופך כל כלל תנועה ליחידה נבדקת, מתועדת ומוחלפת בנפרד לגמרי.
+
+**החלטה מכוונת - איפה לא פיצלתי יותר:** נשקלה גם פירוק נוסף של
+`RealTimeArbiter` (למשל `PendingMoveTracker`/`AirborneTracker`
+נפרדים) - הוחלט שלא לעשות זאת: הפיצול שם לא פותר בעיית "פתיחות
+להרחבה" אמיתית כמו שיש כאן (אין "סוגי זמן-אמת" חדשים שיתווספו
+בעתיד באותה צורה שכלים חדשים מתווספים), ופיצול-יתר שם רק היה
+מוסיף קבצים בלי לשפר cohesion. Strategy pattern הוצדק כאן ספציפית
+כי יש ציר הרחבה אמיתי וברור (כלים חדשים).
+
+**בדיקות:** `tests/test_movement_strategies.cpp` (חדש) - 7 מקרי
+בדיקה, 22 assertions, בודקות כל מחלקת אסטרטגיה בנפרד וגם את הפקטורי.
+כל 48 מקרי הבדיקה בפרויקט (102 assertions) ירוקים - כולל הבדיקות
+הישנות של `MovementRules` שרצות ללא שינוי, מה שמוכיח שהפאסאד מתנהג
+זהה לחלוטין למימוש ה-switch הקודם. וידאתי גם דרך `make` אמיתי
+ומול הבינארי הראשי מקצה לקצה.
