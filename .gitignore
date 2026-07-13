@@ -11,3 +11,7 @@ kungfu_chess
 *.gcda
 *.gcno
 run_tests.exe
+
+# חבילת הגשה שטוחה ל-VPL - נוצרת מחדש ע"י scripts/build_vpl_submission.sh
+vpl_submission/
+kung_fu_chess_vpl.zip
