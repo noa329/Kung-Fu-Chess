@@ -1,5 +1,5 @@
-#include "model/Board.hpp"
-#include "model/PieceFactory.hpp"
+#include "Board.hpp"
+#include "PieceFactory.hpp"
 
 void Board::setGrid(const std::vector<std::vector<std::string>>& tokens) {
     grid.clear();

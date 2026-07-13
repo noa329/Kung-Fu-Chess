@@ -1,4 +1,4 @@
-#include "controller/Controller.hpp"
+#include "Controller.hpp"
 
 Position Controller::pixelToGrid(int x, int y) const {
     int r = (y >= 0) ? y / cellPixelSize : (y - (cellPixelSize - 1)) / cellPixelSize;

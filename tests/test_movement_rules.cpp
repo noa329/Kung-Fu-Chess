@@ -1,5 +1,5 @@
 #include "doctest.h"
-#include "../include/movement_rules/MovementRules.hpp"
+#include "MovementRules.hpp"
 
 // שכבת Movement Rules: גיאומטריית תנועה טהורה לכל סוג כלי.
 // אין כאן שום תלות ב-Piece, ב-Board, בזמן או ברינדור - רק (kind, color, from, to, boardRows) -> bool.

@@ -1,6 +1,6 @@
-#include "game_engine/GameEngine.hpp"
-#include "model/Pieces.hpp"
-#include "rule_engine/RuleEngine.hpp"
+#include "GameEngine.hpp"
+#include "Pieces.hpp"
+#include "RuleEngine.hpp"
 #include <algorithm>
 #include <cstdlib>
 

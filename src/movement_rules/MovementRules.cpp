@@ -1,5 +1,5 @@
-#include "movement_rules/MovementRules.hpp"
-#include "movement_rules/MovementStrategyFactory.hpp"
+#include "MovementRules.hpp"
+#include "MovementStrategyFactory.hpp"
 
 namespace MovementRules {
 

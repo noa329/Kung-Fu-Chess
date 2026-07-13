@@ -1,11 +1,11 @@
 #include "doctest.h"
-#include "../include/movement_rules/KingMovement.hpp"
-#include "../include/movement_rules/RookMovement.hpp"
-#include "../include/movement_rules/BishopMovement.hpp"
-#include "../include/movement_rules/QueenMovement.hpp"
-#include "../include/movement_rules/KnightMovement.hpp"
-#include "../include/movement_rules/PawnMovement.hpp"
-#include "../include/movement_rules/MovementStrategyFactory.hpp"
+#include "KingMovement.hpp"
+#include "RookMovement.hpp"
+#include "BishopMovement.hpp"
+#include "QueenMovement.hpp"
+#include "KnightMovement.hpp"
+#include "PawnMovement.hpp"
+#include "MovementStrategyFactory.hpp"
 
 // Strategy pattern: כל כלי מקבל מחלקה נפרדת שמממשת IMovementStrategy.
 // כל מחלקה כאן היא היחידה שיודעת את הגיאומטריה של הכלי שלה - הוספת

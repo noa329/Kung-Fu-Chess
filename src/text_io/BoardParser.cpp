@@ -1,4 +1,4 @@
-#include "text_io/BoardParser.hpp"
+#include "BoardParser.hpp"
 #include <sstream>
 
 namespace {

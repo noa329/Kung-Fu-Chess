@@ -1,7 +1,7 @@
 #include "doctest.h"
-#include "../include/real_time_arbiter/RealTimeArbiter.hpp"
-#include "../include/model/Board.hpp"
-#include "../include/model/Pieces.hpp"
+#include "RealTimeArbiter.hpp"
+#include "Board.hpp"
+#include "Pieces.hpp"
 
 // שכבת RealTimeArbiter: אובייקטי Motion פעילים, קידום זמן מדומה,
 // פתרון הגעה, ואירועי אכילה. אין כאן חוקיות שחמט, קליקים, רינדור, או

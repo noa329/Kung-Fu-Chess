@@ -1,4 +1,4 @@
-#include "movement_rules/KnightMovement.hpp"
+#include "KnightMovement.hpp"
 #include <cstdlib>
 
 bool KnightMovement::isValidShape(char, const Position& from, const Position& to, int) const {

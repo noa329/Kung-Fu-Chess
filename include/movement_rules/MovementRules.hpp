@@ -1,7 +1,7 @@
 #ifndef MOVEMENT_RULES_H
 #define MOVEMENT_RULES_H
-#include "model/Position.hpp"
-#include "model/PieceKind.hpp"
+#include "Position.hpp"
+#include "PieceKind.hpp"
 
 // שכבת Movement Rules (ראו טבלת בעלות השכבות):
 // בעלות: גיאומטריית תנועה לכל סוג כלי, מחושבת מנתוני קלט טהורים (kind, color, from, to, boardRows).

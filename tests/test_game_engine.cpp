@@ -1,5 +1,5 @@
 #include "doctest.h"
-#include "../include/game_engine/GameEngine.hpp"
+#include "GameEngine.hpp"
 
 // שכבת GameEngine: תיאום שירות-אפליקציה בלבד - שמירה על תנאי סיום משחק,
 // האצלת אימות ל-RuleEngine, התחלת תנועות חוקיות דרך RealTimeArbiter,

@@ -1,5 +1,5 @@
-#include "rule_engine/RuleEngine.hpp"
-#include "movement_rules/MovementRules.hpp"
+#include "RuleEngine.hpp"
+#include "MovementRules.hpp"
 
 bool RuleEngine::isLegal(const std::shared_ptr<Piece>& piece, const Position& from,
                           const Position& to, bool isCapture) const {

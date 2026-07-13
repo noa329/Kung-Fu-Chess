@@ -1,6 +1,6 @@
 #include "doctest.h"
-#include "../include/text_test_runner/TextTestRunner.hpp"
-#include "../include/game_engine/GameEngine.hpp"
+#include "TextTestRunner.hpp"
+#include "GameEngine.hpp"
 #include <sstream>
 
 // שכבת TextTestRunner: פירוש סקריפט פקודות והרצתו דרך נתיב הפקודות

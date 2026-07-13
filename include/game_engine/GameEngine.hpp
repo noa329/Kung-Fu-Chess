@@ -1,8 +1,8 @@
 #ifndef GAME_ENGINE_H
 #define GAME_ENGINE_H
-#include "model/Board.hpp"
-#include "model/Position.hpp"
-#include "real_time_arbiter/RealTimeArbiter.hpp"
+#include "Board.hpp"
+#include "Position.hpp"
+#include "RealTimeArbiter.hpp"
 #include <vector>
 #include <string>
 #include <memory>

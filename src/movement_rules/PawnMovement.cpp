@@ -1,4 +1,4 @@
-#include "movement_rules/PawnMovement.hpp"
+#include "PawnMovement.hpp"
 #include <cstdlib>
 
 bool PawnMovement::isValidShape(char color, const Position& from, const Position& to, int boardRows) const {

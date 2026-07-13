@@ -1,4 +1,4 @@
-#include "movement_rules/QueenMovement.hpp"
+#include "QueenMovement.hpp"
 #include <cstdlib>
 
 bool QueenMovement::isValidShape(char, const Position& from, const Position& to, int) const {

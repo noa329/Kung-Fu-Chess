@@ -1,4 +1,4 @@
-#include "text_io/BoardPrinter.hpp"
+#include "BoardPrinter.hpp"
 
 namespace BoardPrinter {
 

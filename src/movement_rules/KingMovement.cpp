@@ -1,4 +1,4 @@
-#include "movement_rules/KingMovement.hpp"
+#include "KingMovement.hpp"
 #include <cstdlib>
 
 bool KingMovement::isValidShape(char, const Position& from, const Position& to, int) const {

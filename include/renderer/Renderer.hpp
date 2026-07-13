@@ -1,7 +1,7 @@
 #ifndef RENDERER_H
 #define RENDERER_H
 #include <ostream>
-#include "game_engine/GameEngine.hpp"
+#include "GameEngine.hpp"
 
 // שכבת Renderer (ראו טבלת בעלות השכבות):
 // בעלות: ציור חזותי מ-GameSnapshot לקריאה בלבד.

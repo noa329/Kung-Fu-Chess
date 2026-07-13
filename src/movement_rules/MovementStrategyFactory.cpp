@@ -1,10 +1,10 @@
-#include "movement_rules/MovementStrategyFactory.hpp"
-#include "movement_rules/KingMovement.hpp"
-#include "movement_rules/QueenMovement.hpp"
-#include "movement_rules/RookMovement.hpp"
-#include "movement_rules/BishopMovement.hpp"
-#include "movement_rules/KnightMovement.hpp"
-#include "movement_rules/PawnMovement.hpp"
+#include "MovementStrategyFactory.hpp"
+#include "KingMovement.hpp"
+#include "QueenMovement.hpp"
+#include "RookMovement.hpp"
+#include "BishopMovement.hpp"
+#include "KnightMovement.hpp"
+#include "PawnMovement.hpp"
 
 const IMovementStrategy& getMovementStrategy(PieceKind kind) {
     static const KingMovement king;

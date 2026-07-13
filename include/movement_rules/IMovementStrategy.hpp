@@ -1,6 +1,6 @@
 #ifndef I_MOVEMENT_STRATEGY_H
 #define I_MOVEMENT_STRATEGY_H
-#include "model/Position.hpp"
+#include "Position.hpp"
 
 // ממשק Strategy: כל כלי מממש את הגיאומטריה שלו במחלקה נפרדת משלו.
 // הוספת כלי חדש = מחלקה חדשה שמממשת את הממשק הזה - אין צורך לגעת

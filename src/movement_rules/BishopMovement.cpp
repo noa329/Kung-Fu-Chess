@@ -1,4 +1,4 @@
-#include "movement_rules/BishopMovement.hpp"
+#include "BishopMovement.hpp"
 #include <cstdlib>
 
 bool BishopMovement::isValidShape(char, const Position& from, const Position& to, int) const {

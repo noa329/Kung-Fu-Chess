@@ -1,5 +1,5 @@
 #include "doctest.h"
-#include "../include/renderer/Renderer.hpp"
+#include "Renderer.hpp"
 #include <sstream>
 
 // שכבת Renderer: ציור מ-GameSnapshot בלבד, לקריאה. אין כאן כללי משחק,

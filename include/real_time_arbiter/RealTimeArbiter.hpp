@@ -2,9 +2,9 @@
 #define REAL_TIME_ARBITER_H
 #include <vector>
 #include <memory>
-#include "model/Board.hpp"
-#include "model/Piece.hpp"
-#include "model/Position.hpp"
+#include "Board.hpp"
+#include "Piece.hpp"
+#include "Position.hpp"
 
 // שכבת RealTimeArbiter (ראו טבלת בעלות השכבות):
 // בעלות: אובייקטי Motion פעילים, קידום זמן מדומה, פתרון הגעה, ואירועי אכילה.
