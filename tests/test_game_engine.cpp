@@ -42,3 +42,22 @@ TEST_CASE("snapshot reports the currently selected cell") {
     engine.select({0, 0});
     CHECK(engine.snapshot().selected == Position{0, 0});
 }
+
+// דרישת חובה מהמנחה: אי אפשר לצוות על כלי ללכת למקום חדש כאשר הוא
+// כבר באמצע הליכה (mid-flight). מוודאים כאן שניסיון שני "מבטל" את
+// הראשון לא משנה את יעד ההגעה בפועל.
+TEST_CASE("a piece already mid-move cannot be redirected to a new destination") {
+    GameEngine engine;
+    engine.loadBoard({{"wR", ".", ".", ".", "."}});
+    engine.select({0, 0});
+    engine.select({0, 4}); // מהלך ארוך, לא יגיע לפני ה-wait הראשון
+
+    // ניסיון "לחטוף" את הכלי באמצע הדרך ולשלוח אותו למקום אחר -
+    // חייב להיות מתעלם לגמרי, כי מדובר בתא-המקור של מהלך ממתין.
+    engine.select({0, 0});
+    engine.select({0, 1});
+
+    engine.wait(4000); // מספיק זמן להגעה למהלך המקורי (מרחק 4 -> 4000ms)
+    auto snap = engine.snapshot();
+    CHECK(snap.boardTokens == std::vector<std::vector<std::string>>{{".", ".", ".", ".", "wR"}});
+}

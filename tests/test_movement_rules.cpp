@@ -34,9 +34,10 @@ TEST_CASE("Knight moves in L shape") {
 }
 
 TEST_CASE("Pawn double move only from starting row") {
-    CHECK(MovementRules::isValidShape(PieceKind::Pawn, 'w', {7,3}, {5,3}, 8) == true);
+    CHECK(MovementRules::isValidShape(PieceKind::Pawn, 'w', {6,3}, {4,3}, 8) == true);
     CHECK(MovementRules::isValidShape(PieceKind::Pawn, 'w', {5,3}, {3,3}, 8) == false);
     CHECK(MovementRules::isValidShape(PieceKind::Pawn, 'w', {5,3}, {4,3}, 8) == true);
+    CHECK(MovementRules::isValidShape(PieceKind::Pawn, 'w', {7,3}, {5,3}, 8) == false); // השורה האחרונה (7) היא שורת הכלים, לא שורת הבית של החייל
 }
 
 TEST_CASE("Pawn captures diagonally only") {
