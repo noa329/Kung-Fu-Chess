@@ -17,13 +17,6 @@ bool RealTimeArbiter::hasPendingMoveTo(const Position& pos) const {
     return false;
 }
 
-bool RealTimeArbiter::hasPendingMoveOfOppositeColor(char color) const {
-    for (const auto& pm : pendingMoves) {
-        if (pm.piece->getColor() != color) return true;
-    }
-    return false;
-}
-
 bool RealTimeArbiter::isAirborne(const Position& pos) const {
     for (const auto& a : airbornePieces) {
         if (a.pos == pos) return true;

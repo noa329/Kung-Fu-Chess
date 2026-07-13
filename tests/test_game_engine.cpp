@@ -61,3 +61,24 @@ TEST_CASE("a piece already mid-move cannot be redirected to a new destination") 
     auto snap = engine.snapshot();
     CHECK(snap.boardTokens == std::vector<std::vector<std::string>>{{".", ".", ".", ".", "wR"}});
 }
+
+// המהות של "קונג פו שחמט": שני הצדדים זזים בזמן-אמת בלי תורות. כלי של
+// צבע אחד לא אמור לחכות שכלי מהצבע השני יסיים לנוע לפני שהוא יכול
+// להתחיל לזוז בעצמו.
+TEST_CASE("pieces of opposite colors can move concurrently") {
+    GameEngine engine;
+    engine.loadBoard({{"wR", ".", ".", ".", "."}, {"bR", ".", ".", ".", "."}});
+
+    engine.select({0, 0});
+    engine.select({0, 4}); // מהלך לבן, מרחק 4 -> 4000ms
+
+    engine.select({1, 0});
+    engine.select({1, 2}); // מהלך שחור, מרחק 2 -> 2000ms - מתוזמן בזמן שהלבן עדיין באוויר
+
+    engine.wait(4000);
+    auto snap = engine.snapshot();
+    CHECK(snap.boardTokens == std::vector<std::vector<std::string>>{
+        {".", ".", ".", ".", "wR"},
+        {".", ".", "bR", ".", "."}
+    });
+}

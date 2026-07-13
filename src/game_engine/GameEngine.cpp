@@ -14,10 +14,13 @@ void GameEngine::applyCaptureEvents(const std::vector<CaptureEvent>& events) {
 
 bool GameEngine::isMovementLegal(std::shared_ptr<Piece> piece, const Position& from,
                                   const Position& to, bool isCapture) const {
+    // חוקיות שחמט טהורה (צורה + מסלול פנוי) מואצלת ל-RuleEngine.
     RuleEngine engine(board);
     if (!engine.isLegal(piece, from, to, isCapture)) return false;
 
-    if (arbiter.hasPendingMoveOfOppositeColor(piece->getColor())) return false;
+    // "קונג פו שחמט" הוא זמן-אמת ללא תורות: כלים משני הצבעים זזים
+    // בו-זמנית. אין כאן בדיקה מול הצבע השני בכוונה - רק מגבלות מקום
+    // (לא ניתן להתחיל תנועה מתא/ליעד שכבר בשימוש ע"י מהלך ממתין).
     if (arbiter.hasPendingMoveTo(to)) return false;
     return true;
 }

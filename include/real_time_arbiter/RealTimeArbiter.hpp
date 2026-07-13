@@ -53,7 +53,6 @@ public:
 
     bool hasPendingMoveFrom(const Position& pos) const;
     bool hasPendingMoveTo(const Position& pos) const;
-    bool hasPendingMoveOfOppositeColor(char color) const;
     bool isAirborne(const Position& pos) const;
 
     void scheduleMove(const Position& from, const Position& to, std::shared_ptr<Piece> piece, bool isCapture);
