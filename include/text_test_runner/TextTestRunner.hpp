@@ -5,12 +5,6 @@
 #include "GameEngine.hpp"
 #include "Controller.hpp"
 
-// שכבת TextTestRunner (ראו טבלת בעלות השכבות):
-// בעלות: פירוש סקריפט והפעלת נתיב הפקודות הציבורי.
-// אסור לה: כללי תנועה, שינוי ישיר של Board, או שכפול לוגיקת משחק.
-//
-// מריצה תסריט פקודות טקסטואלי (click/jump/wait/print board) דרך
-// ה-API הציבורי של Controller ו-GameEngine בלבד - בלי UI אמיתי.
 class TextTestRunner {
     GameEngine& engine;
     Controller controller;

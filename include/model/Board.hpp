@@ -8,6 +8,7 @@
 
 class Board {
     std::vector<std::vector<std::shared_ptr<Piece>>> grid;
+    int cellPixelSize = 100;
 public:
     Board() = default;
     

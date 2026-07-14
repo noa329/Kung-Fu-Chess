@@ -6,14 +6,6 @@
 #include "Piece.hpp"
 #include "Position.hpp"
 
-// שכבת RealTimeArbiter (ראו טבלת בעלות השכבות):
-// בעלות: אובייקטי Motion פעילים, קידום זמן מדומה, פתרון הגעה, ואירועי אכילה.
-// אסור לה: חוקיות שחמט, קליקים, רינדור, או פירוש סקריפט.
-//
-// שימו לב: היא כן מותרת לגעת ב-Board (כדי בפועל להזיז כלים כשמהלך מגיע),
-// אבל היא לא מחליטה "המשחק נגמר" - היא רק מדווחת CaptureEvent החוצה,
-// וה-GameEngine (השכבה הבאה) יחליט מה המשמעות של אכילת מלך.
-
 struct PendingMove {
     Position from;
     Position to;
@@ -58,8 +50,6 @@ public:
     void scheduleMove(const Position& from, const Position& to, std::shared_ptr<Piece> piece, bool isCapture);
     void scheduleJump(const Position& pos, std::shared_ptr<Piece> piece);
 
-    // מקדם את הזמן המדומה ב-ms, פותר מהלכים/קפיצות שהגיע זמנן,
-    // ומחזיר את אירועי האכילה שקרו בפרק הזמן הזה.
     std::vector<CaptureEvent> advance(int ms);
 };
 #endif

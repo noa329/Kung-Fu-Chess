@@ -6,12 +6,10 @@ bool PawnMovement::isValidShape(char color, const Position& from, const Position
     int dc = to.col - from.col;
     if (dc != 0) return false;
     int direction = (color == 'w') ? -1 : 1;
-    if (dr == direction) return true; // צעד יחיד
+    if (dr == direction) return true; 
 
-    // שורת הבית: שורה אחת קדימה מהשורה האחורית (שם יושבים שאר הכלים),
-    // לא השורה האחורית עצמה.
     int startRow = (color == 'w') ? boardRows - 2 : 1;
-    if (dr == 2 * direction && from.row == startRow) return true; // צעד כפול, רק משורת הבית
+    if (dr == 2 * direction && from.row == startRow) return true; 
     return false;
 }
 

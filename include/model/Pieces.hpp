@@ -2,9 +2,6 @@
 #define PIECES_H
 #include "Piece.hpp"
 
-// שכבת Model: כל מחלקה כאן מזהה רק *מה* הכלי הוא (סוג + ייצוג טקסטואלי).
-// *איך* הכלי זז נמצא במלואו ב-MovementRules.cpp.
-
 class King : public Piece {
 public:
     King(char c) : Piece(c) {}

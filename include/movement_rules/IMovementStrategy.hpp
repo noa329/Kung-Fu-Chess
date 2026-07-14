@@ -2,9 +2,6 @@
 #define I_MOVEMENT_STRATEGY_H
 #include "Position.hpp"
 
-// ממשק Strategy: כל כלי מממש את הגיאומטריה שלו במחלקה נפרדת משלו.
-// הוספת כלי חדש = מחלקה חדשה שמממשת את הממשק הזה - אין צורך לגעת
-// באף מחלקה קיימת (Open/Closed).
 class IMovementStrategy {
 public:
     virtual ~IMovementStrategy() = default;

@@ -5,13 +5,6 @@
 #include "Piece.hpp"
 #include "Position.hpp"
 
-// שכבת RuleEngine (ראו טבלת בעלות השכבות):
-// בעלות: אימות חוקיות מהלך מבוקש, קריאה בלבד.
-// אסור לה: שינוי Board, אנימציה, פירוש קליקים, או מצב סיום משחק.
-//
-// RuleEngine מחזיק רפרנס קבוע (const) ל-Board כדי לשאול שאלות תפוסה
-// (isPathClear) ומאציל את הגיאומטריה עצמה ל-MovementRules. הוא לא יודע
-// כלום על תנועות ממתינות/זמן-אמת - זה תפקידה של RealTimeArbiter.
 class RuleEngine {
     const Board& board;
 public:

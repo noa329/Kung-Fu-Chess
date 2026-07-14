@@ -47,11 +47,10 @@ void RealTimeArbiter::resolveArrival(const PendingMove& pm, std::vector<CaptureE
     auto occupant = board.getCell(pm.to.row, pm.to.col);
 
     if (occupant && occupant->getColor() == pm.piece->getColor()) {
-        return; // כלי ידידותי - הגנה, לא אמור לקרות
+        return; 
     }
 
     if (occupant && isAirborne(pm.to) && occupant->getColor() != pm.piece->getColor()) {
-        // הכלי המקפיץ תופס את התוקף באוויר: התוקף מוסר לגמרי מהלוח, המקפיץ נשאר
         board.setCell(pm.from.row, pm.from.col, nullptr);
         return;
     }

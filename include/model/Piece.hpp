@@ -4,8 +4,6 @@
 #include "Position.hpp"
 #include "PieceKind.hpp"
 
-// שכבת Model: זהות כלי בלבד. אין כאן שום כלל תנועה - זה תפקידה
-// של שכבת MovementRules (ראו MovementRules.hpp).
 class Piece {
 protected:
     char color; // 'w' or 'b'

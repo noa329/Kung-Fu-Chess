@@ -3,7 +3,5 @@
 #include "IMovementStrategy.hpp"
 #include "PieceKind.hpp"
 
-// מחזיר את אסטרטגיית התנועה המתאימה ל-PieceKind. הרפרנס המוחזר הוא
-// לאובייקט סטטי חסר-מצב (stateless) - אין הקצאה בכל קריאה.
 const IMovementStrategy& getMovementStrategy(PieceKind kind);
 #endif
