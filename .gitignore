@@ -1,17 +1,40 @@
-# קובץ ההרצה
-kungfu_chess
-
-# תיקיות של עורכי קוד (כמו VS Code או CLion)
+# --- עורכי קוד (IDE) ---
 .vscode/
 .idea/
+.DS_Store
 
-# קבצי אובייקט (אם תצרי כאלה בעתיד)
+# --- קבצי הרצה ו-Build ---
+# קבצי הרצה ותוצרי קומפילציה
+*.exe
 *.o
-# Coverage and build files
+*.obj
+*.pdb
+*.ilk
+kungfu_chess
+run_tests.exe
+build/
+out/
+
+# --- קבצי סביבת עבודה ו-CMake ---
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+*.vcxproj
+*.vcxproj.filters
+*.sln
+
+# --- בדיקות וכיסוי קוד ---
 *.gcda
 *.gcno
-run_tests.exe
 
-# חבילת הגשה שטוחה ל-VPL - נוצרת מחדש ע"י scripts/build_vpl_submission.sh
+# --- ספריות צד שלישי כבדות ---
+kungfu-graphics/cpp/OpenCV_451/
+
+# --- תיקיות שפה ופרויקטים פנימיים ---
+py/__pycache__/
+java/target/
+
+# --- קבצי הגשה וסקריפטים ---
 vpl_submission/
 kung_fu_chess_vpl.zip
+.scripts/
