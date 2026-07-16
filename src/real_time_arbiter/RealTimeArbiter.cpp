@@ -34,9 +34,27 @@ long long RealTimeArbiter::calculateTravelTime(const Position& from, const Posit
     return cellDistance * CELL_TRAVEL_TIME_MS;
 }
 
+bool RealTimeArbiter::getMoveProgress(const Position& pos, MoveProgress& out) const {
+    for (const auto& pm : pendingMoves) {
+        if (pm.from == pos) {
+            long long duration = pm.arrivalTime - pm.startTime;
+            double p = (duration > 0)
+                ? static_cast<double>(currentTime - pm.startTime) / static_cast<double>(duration)
+                : 1.0;
+            if (p < 0.0) p = 0.0;
+            if (p > 1.0) p = 1.0;
+            out.from = pm.from;
+            out.to = pm.to;
+            out.progress = p;
+            return true;
+        }
+    }
+    return false;
+}
+
 void RealTimeArbiter::scheduleMove(const Position& from, const Position& to, std::shared_ptr<Piece> piece, bool isCapture) {
     long long arrival = currentTime + calculateTravelTime(from, to, isCapture);
-    pendingMoves.push_back({from, to, arrival, piece});
+    pendingMoves.push_back({from, to, currentTime, arrival, piece});
 }
 
 void RealTimeArbiter::scheduleJump(const Position& pos, std::shared_ptr<Piece> piece) {

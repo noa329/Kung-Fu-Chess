@@ -9,6 +9,7 @@
 struct PendingMove {
     Position from;
     Position to;
+    long long startTime;
     long long arrivalTime;
     std::shared_ptr<Piece> piece;
 };
@@ -23,6 +24,12 @@ struct CaptureEvent {
     Position at;
     char capturedColor;
     bool wasKing;
+};
+
+struct MoveProgress {
+    Position from;
+    Position to;
+    double progress; // 0.0 (just scheduled) .. 1.0 (arriving)
 };
 
 class RealTimeArbiter {
@@ -46,6 +53,8 @@ public:
     bool hasPendingMoveFrom(const Position& pos) const;
     bool hasPendingMoveTo(const Position& pos) const;
     bool isAirborne(const Position& pos) const;
+
+    bool getMoveProgress(const Position& pos, MoveProgress& out) const;
 
     void scheduleMove(const Position& from, const Position& to, std::shared_ptr<Piece> piece, bool isCapture);
     void scheduleJump(const Position& pos, std::shared_ptr<Piece> piece);
