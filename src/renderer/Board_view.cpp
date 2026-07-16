@@ -1,5 +1,6 @@
 #include "Board_view.hpp"
 #include <cctype>
+#include <cmath>
 #include <iostream>
 
 bool BoardView::init(const std::string& assets_root, const std::string& piece_set) {
@@ -8,9 +9,6 @@ bool BoardView::init(const std::string& assets_root, const std::string& piece_se
         return false;
     }
 
-    // board.png is assumed square (8x8 equal cells); if it isn't exactly
-    // square this rounds down, which is fine for a few stray pixels but
-    // will drift for a very non-square image.
     cellSize_ = std::min(boardImg_.width(), boardImg_.height()) / rows_;
     piecesDir_ = assets_root + "/" + piece_set;
     cells_.clear();
@@ -18,8 +16,6 @@ bool BoardView::init(const std::string& assets_root, const std::string& piece_se
 }
 
 std::string BoardView::tokenToSpriteCode(const std::string& token) {
-    // Engine tokens are "<color><type>", e.g. "wP", "bK" ('.' = empty).
-    // Sprite folders are named "<type><COLOR>", e.g. "PW", "KB".
     if (token.size() != 2) {
         return "";
     }
@@ -80,7 +76,23 @@ Img BoardView::render(const GameSnapshot& snap) {
     for (auto& [key, cell] : cells_) {
         const int r = key.first;
         const int c = key.second;
-        cell.anim.currentFrame().draw_on(frame, c * cellSize_, r * cellSize_);
+
+        // Default: draw at this cell's fixed pixel position.
+        double px = c * cellSize_;
+        double py = r * cellSize_;
+
+        const bool inBounds = r < static_cast<int>(snap.cellStates.size()) &&
+                               c < static_cast<int>(snap.cellStates[r].size());
+        if (inBounds && snap.cellStates[r][c] == "move") {
+            const Position& to = snap.moveTargets[r][c];
+            const double t = snap.moveProgress[r][c];
+            const double toX = to.col * cellSize_;
+            const double toY = to.row * cellSize_;
+            px = px + (toX - px) * t;
+            py = py + (toY - py) * t;
+        }
+
+        cell.anim.currentFrame().draw_on(frame, static_cast<int>(std::round(px)), static_cast<int>(std::round(py)));
     }
 
     if (snap.selected.row >= 0 && snap.selected.col >= 0) {
