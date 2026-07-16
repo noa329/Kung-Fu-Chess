@@ -7,7 +7,9 @@
 class Img {
 public:
     Img();
-    
+    Img(const Img& other);
+    Img& operator=(const Img& other);
+
     /**
      * Load image from path and optionally resize.
      * 
@@ -29,7 +31,7 @@ public:
      * @param x X coordinate for top-left corner
      * @param y Y coordinate for top-left corner
      */
-    void draw_on(Img& other_img, int x, int y);
+    void draw_on(Img& other_img, int x, int y) const;
     
     /**
      * Put text on the image
@@ -44,12 +46,47 @@ public:
     void put_text(const std::string& txt, int x, int y, double font_size,
                   const cv::Scalar& color = cv::Scalar(255, 255, 255, 255),
                   int thickness = 1);
-    
+
     /**
-     * Display the image in a window
+     * Draw a rectangle outline (or filled, if thickness < 0) directly on this image.
+     * Used for selection highlights, debug grids, etc. All on-screen drawing must
+     * go through Img, so this is the one place cv::rectangle is called from.
+     */
+    void rectangle(int x, int y, int w, int h,
+                   const cv::Scalar& color = cv::Scalar(0, 255, 255, 255),
+                   int thickness = 2);
+
+    /**
+     * Display the image in a window (blocking - waits for any key, then closes the window).
+     * Kept for simple one-off tests/demos.
      */
     void show();
-    
+
+    /**
+     * Display the image in a persistent, named window without blocking or destroying
+     * the window afterwards. Meant to be called once per frame inside a game loop.
+     *
+     * @param window_name Name of the window (created the first time it's used)
+     * @param delay_ms How long to wait for a key press (cv::waitKey delay)
+     * @return The key code pressed during the wait, or -1 if none
+     */
+    int show_frame(const std::string& window_name, int delay_ms = 1);
+
+    /**
+     * Register a mouse callback on a named window (creates the window if needed).
+     * This is the only supported way to receive mouse/click events, so all input
+     * handling also stays routed through Img.
+     */
+    static void on_mouse(const std::string& window_name, cv::MouseCallback callback, void* userdata = nullptr);
+
+    /**
+     * Returns a deep copy of this image (independent pixel buffer).
+     */
+    Img clone() const;
+
+    int width() const { return img.cols; }
+    int height() const { return img.rows; }
+
     /**
      * Get the underlying OpenCV Mat
      */
@@ -62,4 +99,4 @@ public:
 
 private:
     cv::Mat img;
-}; 
+};

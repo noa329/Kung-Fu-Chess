@@ -8,7 +8,8 @@
 #include <memory>
 
 struct GameSnapshot {
-    std::vector<std::vector<std::string>> boardTokens; 
+    std::vector<std::vector<std::string>> boardTokens;
+    std::vector<std::vector<std::string>> cellStates; // "idle" | "move" | "jump", per occupied cell
     Position selected;
     bool gameOver;
 };

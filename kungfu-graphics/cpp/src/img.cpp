@@ -6,6 +6,17 @@ Img::Img() {
     // Constructor - img is automatically initialized as empty
 }
 
+Img::Img(const Img& other) {
+    img = other.img.clone();
+}
+
+Img& Img::operator=(const Img& other) {
+    if (this != &other) {
+        img = other.img.clone();
+    }
+    return *this;
+}
+
 Img& Img::read(const std::string& path,
                const std::pair<int, int>& size,
                bool keep_aspect,
@@ -35,46 +46,68 @@ Img& Img::read(const std::string& path,
     return *this;
 }
 
-void Img::draw_on(Img& other_img, int x, int y) {
+void Img::draw_on(Img& other_img, int x, int y) const {
     if (img.empty() || other_img.img.empty()) {
         throw std::runtime_error("Both images must be loaded before drawing.");
     }
 
-    // Handle different channel counts
-    cv::Mat source_img = img;
-    cv::Mat target_img = other_img.img;
-    
-    if (source_img.channels() != target_img.channels()) {
-        if (source_img.channels() == 3 && target_img.channels() == 4) {
-            cv::cvtColor(source_img, source_img, cv::COLOR_BGR2BGRA);
-        } else if (source_img.channels() == 4 && target_img.channels() == 3) {
-            cv::cvtColor(source_img, source_img, cv::COLOR_BGRA2BGR);
-        }
-    }
+    const cv::Mat& source_img = img;
+    cv::Mat& target_img = other_img.img;
 
     int h = source_img.rows;
     int w = source_img.cols;
     int H = target_img.rows;
     int W = target_img.cols;
 
-    if (y + h > H || x + w > W) {
+    if (x < 0 || y < 0 || y + h > H || x + w > W) {
         throw std::runtime_error("Image does not fit at the specified position.");
     }
 
     cv::Mat roi = target_img(cv::Rect(x, y, w, h));
 
     if (source_img.channels() == 4) {
-        // Handle alpha blending for BGRA images
-        std::vector<cv::Mat> channels;
-        cv::split(source_img, channels);
-        cv::Mat alpha = channels[3] / 255.0;
-        
-        for (int c = 0; c < 3; ++c) {
-            roi.col(c) = (1.0 - alpha) * roi.col(c) + alpha * channels[c];
+        // Alpha-blend the source's color onto roi using the source's own
+        // alpha channel, one full-size (h x w) plane at a time - the previous
+        // version mixed a per-pixel alpha *matrix* with a single *column* of
+        // roi, which only worked by accident on 1px-wide images.
+        std::vector<cv::Mat> src_channels; // B, G, R, A
+        cv::split(source_img, src_channels);
+
+        cv::Mat alpha, inv_alpha;
+        src_channels[3].convertTo(alpha, CV_64F, 1.0 / 255.0);
+        inv_alpha = 1.0 - alpha;
+
+        std::vector<cv::Mat> roi_channels;
+        cv::split(roi, roi_channels);
+
+        const int color_channels = std::min<int>(3, static_cast<int>(roi_channels.size()));
+        for (int c = 0; c < color_channels; ++c) {
+            cv::Mat roi_c64, src_c64, blended;
+            roi_channels[c].convertTo(roi_c64, CV_64F);
+            src_channels[c].convertTo(src_c64, CV_64F);
+            blended = src_c64.mul(alpha) + roi_c64.mul(inv_alpha);
+            blended.convertTo(roi_channels[c], roi_channels[c].type());
         }
-    } else {
-        // Direct copy for BGR images
+        // roi's own alpha channel (if it has one) is left untouched.
+        cv::merge(roi_channels, roi);
+    } else if (source_img.channels() == roi.channels()) {
+        // Same channel count, no transparency to blend - straight copy.
         source_img.copyTo(roi);
+    } else if (source_img.channels() == 3 && roi.channels() == 4) {
+        // Opaque 3-channel source onto a 4-channel target: copy color only,
+        // leave target's alpha channel untouched.
+        std::vector<cv::Mat> src_channels;
+        cv::split(source_img, src_channels);
+        std::vector<cv::Mat> roi_channels;
+        cv::split(roi, roi_channels);
+        for (int c = 0; c < 3; ++c) {
+            src_channels[c].copyTo(roi_channels[c]);
+        }
+        cv::merge(roi_channels, roi);
+    } else {
+        cv::Mat converted;
+        cv::cvtColor(source_img, converted, cv::COLOR_BGRA2BGR);
+        converted.copyTo(roi);
     }
 }
 
@@ -89,6 +122,13 @@ void Img::put_text(const std::string& txt, int x, int y, double font_size,
                 color, thickness, cv::LINE_AA);
 }
 
+void Img::rectangle(int x, int y, int w, int h, const cv::Scalar& color, int thickness) {
+    if (img.empty()) {
+        throw std::runtime_error("Image not loaded.");
+    }
+    cv::rectangle(img, cv::Rect(x, y, w, h), color, thickness, cv::LINE_AA);
+}
+
 void Img::show() {
     if (img.empty()) {
         throw std::runtime_error("Image not loaded.");
@@ -97,4 +137,24 @@ void Img::show() {
     cv::imshow("Image", img);
     cv::waitKey(0);
     cv::destroyAllWindows();
-} 
+}
+
+int Img::show_frame(const std::string& window_name, int delay_ms) {
+    if (img.empty()) {
+        throw std::runtime_error("Image not loaded.");
+    }
+
+    cv::imshow(window_name, img);
+    return cv::waitKey(delay_ms);
+}
+
+void Img::on_mouse(const std::string& window_name, cv::MouseCallback callback, void* userdata) {
+    cv::namedWindow(window_name, cv::WINDOW_AUTOSIZE);
+    cv::setMouseCallback(window_name, callback, userdata);
+}
+
+Img Img::clone() const {
+    Img copy;
+    copy.img = img.clone();
+    return copy;
+}
