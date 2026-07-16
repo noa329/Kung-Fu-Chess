@@ -66,10 +66,6 @@ void Img::draw_on(Img& other_img, int x, int y) const {
     cv::Mat roi = target_img(cv::Rect(x, y, w, h));
 
     if (source_img.channels() == 4) {
-        // Alpha-blend the source's color onto roi using the source's own
-        // alpha channel, one full-size (h x w) plane at a time - the previous
-        // version mixed a per-pixel alpha *matrix* with a single *column* of
-        // roi, which only worked by accident on 1px-wide images.
         std::vector<cv::Mat> src_channels; // B, G, R, A
         cv::split(source_img, src_channels);
 
@@ -88,14 +84,10 @@ void Img::draw_on(Img& other_img, int x, int y) const {
             blended = src_c64.mul(alpha) + roi_c64.mul(inv_alpha);
             blended.convertTo(roi_channels[c], roi_channels[c].type());
         }
-        // roi's own alpha channel (if it has one) is left untouched.
         cv::merge(roi_channels, roi);
     } else if (source_img.channels() == roi.channels()) {
-        // Same channel count, no transparency to blend - straight copy.
         source_img.copyTo(roi);
     } else if (source_img.channels() == 3 && roi.channels() == 4) {
-        // Opaque 3-channel source onto a 4-channel target: copy color only,
-        // leave target's alpha channel untouched.
         std::vector<cv::Mat> src_channels;
         cv::split(source_img, src_channels);
         std::vector<cv::Mat> roi_channels;
@@ -127,6 +119,13 @@ void Img::rectangle(int x, int y, int w, int h, const cv::Scalar& color, int thi
         throw std::runtime_error("Image not loaded.");
     }
     cv::rectangle(img, cv::Rect(x, y, w, h), color, thickness, cv::LINE_AA);
+}
+
+void Img::circle(int cx, int cy, int radius, const cv::Scalar& color, int thickness) {
+    if (img.empty()) {
+        throw std::runtime_error("Image not loaded.");
+    }
+    cv::circle(img, cv::Point(cx, cy), radius, color, thickness, cv::LINE_AA);
 }
 
 void Img::show() {
