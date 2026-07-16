@@ -76,9 +76,13 @@ GameSnapshot GameEngine::snapshot() const {
     int cols = board.getColCount();
     snap.boardTokens.resize(rows);
     snap.cellStates.resize(rows);
+    snap.moveTargets.resize(rows);
+    snap.moveProgress.resize(rows);
     for (int r = 0; r < rows; ++r) {
         snap.boardTokens[r].resize(cols);
         snap.cellStates[r].resize(cols);
+        snap.moveTargets[r].resize(cols);
+        snap.moveProgress[r].resize(cols, 0.0);
         for (int c = 0; c < cols; ++c) {
             auto piece = board.getCell(r, c);
             snap.boardTokens[r][c] = piece ? piece->toString() : ".";
@@ -86,12 +90,11 @@ GameSnapshot GameEngine::snapshot() const {
             std::string state = "idle";
             if (piece) {
                 Position pos{r, c};
-                // A piece scheduled to move stays on its origin cell (per
-                // RealTimeArbiter) until it arrives, so "move" plays there
-                // for the whole travel time; a jumping piece plays "jump"
-                // in place for JUMP_DURATION_MS.
-                if (arbiter.hasPendingMoveFrom(pos)) {
+                MoveProgress mp;
+                if (arbiter.getMoveProgress(pos, mp)) {
                     state = "move";
+                    snap.moveTargets[r][c] = mp.to;
+                    snap.moveProgress[r][c] = mp.progress;
                 } else if (arbiter.isAirborne(pos)) {
                     state = "jump";
                 }
