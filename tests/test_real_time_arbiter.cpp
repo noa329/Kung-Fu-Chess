@@ -101,3 +101,15 @@ TEST_CASE("capturing a king is reported back as a capture event") {
     CHECK(events[0].wasKing == true);
     CHECK(board.getCell(0, 1).get() == rook.get()); // המלך בכל זאת מוחלף בכלי התוקף
 }
+
+TEST_CASE("a capture event reports the captured piece's kind") {
+    Board board;
+    board.setGrid({{"wR", "bN"}});
+    RealTimeArbiter arbiter(board);
+    auto rook = board.getCell(0, 0);
+    arbiter.scheduleMove({0,0}, {0,1}, rook, /*isCapture=*/true);
+    auto events = arbiter.advance(1000);
+    CHECK(events.size() == 1);
+    CHECK(events[0].capturedKind == PieceKind::Knight);
+    CHECK(events[0].capturedColor == 'b');
+}

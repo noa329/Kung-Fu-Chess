@@ -5,6 +5,7 @@
 #include "Board.hpp"
 #include "Piece.hpp"
 #include "Position.hpp"
+#include "PieceKind.hpp"
 
 struct PendingMove {
     Position from;
@@ -24,6 +25,7 @@ struct CaptureEvent {
     Position at;
     char capturedColor;
     bool wasKing;
+    PieceKind capturedKind;
 };
 
 struct MoveProgress {

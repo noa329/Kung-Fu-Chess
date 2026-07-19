@@ -82,3 +82,70 @@ TEST_CASE("pieces of opposite colors can move concurrently") {
         {".", ".", "bR", ".", "."}
     });
 }
+
+// שלב 8: שמות שחקנים, ניקוד ("cost" של כלים שנאכלו), ולוג מהלכים -
+// הרחבות ל-GameSnapshot בלבד, אין שינוי לחוקיות מהלכים.
+
+TEST_CASE("player names default to White/Black and can be overridden") {
+    GameEngine engine;
+    engine.loadBoard({{"wK"}});
+    CHECK(engine.getWhiteName() == "White");
+    CHECK(engine.getBlackName() == "Black");
+    engine.setPlayerNames("Alice", "Bob");
+    CHECK(engine.getWhiteName() == "Alice");
+    CHECK(engine.getBlackName() == "Bob");
+    auto snap = engine.snapshot();
+    CHECK(snap.whiteName == "Alice");
+    CHECK(snap.blackName == "Bob");
+}
+
+TEST_CASE("capturing a piece credits the capturing side with its value") {
+    GameEngine engine;
+    engine.loadBoard({{"wR", "bN"}});
+    CHECK(engine.snapshot().whiteScore == 0);
+    CHECK(engine.snapshot().blackScore == 0);
+    engine.select({0, 0});
+    engine.select({0, 1}); // white rook captures black knight (value 3)
+    engine.wait(1000);
+    auto snap = engine.snapshot();
+    CHECK(snap.whiteScore == 3);
+    CHECK(snap.blackScore == 0);
+}
+
+TEST_CASE("capturing a king ends the game without changing the score") {
+    GameEngine engine;
+    engine.loadBoard({{"wR", "bK"}});
+    engine.select({0, 0});
+    engine.select({0, 1});
+    engine.wait(1000);
+    auto snap = engine.snapshot();
+    CHECK(snap.gameOver == true);
+    CHECK(snap.whiteScore == 0);
+}
+
+TEST_CASE("a move is appended to the history when scheduled, not when it lands") {
+    GameEngine engine;
+    engine.loadBoard({{"wR", ".", ".", ".", "."}});
+    engine.select({0, 0});
+    engine.select({0, 4}); // long move, won't land immediately
+
+    auto snapBeforeArrival = engine.snapshot();
+    REQUIRE(snapBeforeArrival.whiteMoves.size() == 1);
+    CHECK(snapBeforeArrival.whiteMoves[0].color == 'w');
+    CHECK(snapBeforeArrival.whiteMoves[0].notation == "a1e1"); // 1-row board: rank = rowCount(1) - row(0) = 1
+    CHECK(snapBeforeArrival.blackMoves.empty());
+
+    engine.wait(4000);
+    auto snapAfterArrival = engine.snapshot();
+    CHECK(snapAfterArrival.whiteMoves.size() == 1); // still just the one scheduling, not a second entry on arrival
+}
+
+TEST_CASE("a jump is appended to the history too") {
+    GameEngine engine;
+    engine.loadBoard({{"wN"}});
+    engine.jump({0, 0});
+    auto snap = engine.snapshot();
+    REQUIRE(snap.whiteMoves.size() == 1);
+    CHECK(snap.whiteMoves[0].color == 'w');
+    CHECK(snap.whiteMoves[0].notation == "a1");
+}

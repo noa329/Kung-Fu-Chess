@@ -74,7 +74,7 @@ void RealTimeArbiter::resolveArrival(const PendingMove& pm, std::vector<CaptureE
     }
 
     if (occupant) {
-        events.push_back({pm.to, occupant->getColor(), occupant->isKing()});
+        events.push_back({pm.to, occupant->getColor(), occupant->isKing(), occupant->getKind()});
     }
 
     board.setCell(pm.to.row, pm.to.col, pm.piece);

@@ -4,10 +4,37 @@
 #include <algorithm>
 #include <cstdlib>
 
+namespace {
+
+int pieceValue(PieceKind kind) {
+    switch (kind) {
+        case PieceKind::Pawn:   return 1;
+        case PieceKind::Knight: return 3;
+        case PieceKind::Bishop: return 3;
+        case PieceKind::Rook:   return 5;
+        case PieceKind::Queen:  return 9;
+        case PieceKind::King:   return 0; // king captures end the game via wasKing, not scored
+    }
+    return 0;
+}
+
+std::string squareName(const Position& pos, int rowCount) {
+    return std::string(1, char('a' + pos.col)) + std::to_string(rowCount - pos.row);
+}
+
+} // namespace
+
 void GameEngine::applyCaptureEvents(const std::vector<CaptureEvent>& events) {
     for (const auto& e : events) {
         if (e.wasKing) gameOver = true;
+        int value = pieceValue(e.capturedKind);
+        if (e.capturedColor == 'w') blackScore_ += value; else whiteScore_ += value;
     }
+}
+
+void GameEngine::setPlayerNames(const std::string& whiteName, const std::string& blackName) {
+    whiteName_ = whiteName;
+    blackName_ = blackName;
 }
 
 bool GameEngine::isMovementLegal(std::shared_ptr<Piece> piece, const Position& from,
@@ -19,6 +46,7 @@ bool GameEngine::isMovementLegal(std::shared_ptr<Piece> piece, const Position& f
 }
 
 void GameEngine::wait(int ms) {
+    clock_ += ms;
     auto events = arbiter.advance(ms);
     applyCaptureEvents(events);
 }
@@ -33,6 +61,7 @@ void GameEngine::jump(const Position& pos) {
     if (arbiter.isAirborne(pos)) return;
 
     arbiter.scheduleJump(pos, piece);
+    moveHistory_.push_back({clock_, piece->getColor(), squareName(pos, board.getRowCount())});
     selected = {-1, -1};
 }
 
@@ -57,6 +86,8 @@ void GameEngine::select(const Position& pos) {
         }
         if (isMovementLegal(selectedPiece, selected, pos, /*isCapture=*/true)) {
             arbiter.scheduleMove(selected, pos, selectedPiece, /*isCapture=*/true);
+            moveHistory_.push_back({clock_, selectedPiece->getColor(),
+                squareName(selected, board.getRowCount()) + squareName(pos, board.getRowCount())});
             selected = {-1, -1};
         }
         return;
@@ -64,6 +95,8 @@ void GameEngine::select(const Position& pos) {
 
     if (isMovementLegal(selectedPiece, selected, pos, /*isCapture=*/false)) {
         arbiter.scheduleMove(selected, pos, selectedPiece, /*isCapture=*/false);
+        moveHistory_.push_back({clock_, selectedPiece->getColor(),
+            squareName(selected, board.getRowCount()) + squareName(pos, board.getRowCount())});
         selected = {-1, -1};
     }
 }
@@ -72,6 +105,13 @@ GameSnapshot GameEngine::snapshot() const {
     GameSnapshot snap;
     snap.selected = selected;
     snap.gameOver = gameOver;
+    snap.whiteName = whiteName_;
+    snap.blackName = blackName_;
+    snap.whiteScore = whiteScore_;
+    snap.blackScore = blackScore_;
+    for (const auto& m : moveHistory_) {
+        if (m.color == 'w') snap.whiteMoves.push_back(m); else snap.blackMoves.push_back(m);
+    }
     int rows = board.getRowCount();
     int cols = board.getColCount();
     snap.boardTokens.resize(rows);
