@@ -200,3 +200,42 @@ TEST_CASE("a piece in short rest after a jump cannot jump again until the cooldo
     engine.jump({0, 0}); // now succeeds
     CHECK(engine.snapshot().whiteMoves.size() == 2);
 }
+
+// שלב 4: הבזק תפיסה (capture flash) - אפקט חזותי בלבד, לא משפיע על חוקיות
+// או על boardTokens; דועך במשך CAPTURE_EFFECT_MS ואז נעלם מה-snapshot.
+
+TEST_CASE("a capture creates a decaying capture flash that disappears after its effect duration") {
+    GameEngine engine;
+    engine.loadBoard({{"wR", "bN"}});
+    engine.select({0, 0});
+    engine.select({0, 1}); // white rook captures black knight, capture duration 1000ms
+    engine.wait(1000); // the capture lands now
+
+    auto snap = engine.snapshot();
+    REQUIRE(snap.captureFlashes.size() == 1);
+    CHECK(snap.captureFlashes[0].at == Position{0, 1});
+    CHECK(snap.captureFlashes[0].capturedColor == 'b');
+    CHECK(snap.captureFlashes[0].wasKing == false);
+    CHECK(snap.captureFlashes[0].progress == doctest::Approx(0.0));
+    CHECK(snap.boardTokens == std::vector<std::vector<std::string>>{{".", "wR"}}); // purely decorative
+
+    engine.wait(200); // halfway through the 400ms effect
+    CHECK(engine.snapshot().captureFlashes[0].progress == doctest::Approx(0.5));
+
+    engine.wait(199); // 399ms total - still active
+    CHECK(engine.snapshot().captureFlashes.size() == 1);
+
+    engine.wait(1); // 400ms total - effect expires
+    CHECK(engine.snapshot().captureFlashes.empty());
+}
+
+TEST_CASE("a captured king's flash is reported with wasKing set") {
+    GameEngine engine;
+    engine.loadBoard({{"wR", "bK"}});
+    engine.select({0, 0});
+    engine.select({0, 1});
+    engine.wait(1000);
+    auto snap = engine.snapshot();
+    REQUIRE(snap.captureFlashes.size() == 1);
+    CHECK(snap.captureFlashes[0].wasKing == true);
+}

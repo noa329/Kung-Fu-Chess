@@ -34,7 +34,7 @@ public:
     /** Advance every on-board piece's animation. Call once per frame. */
     void update(int dt_ms);
 
-    /** Render the current frame (background + pieces + selection highlight). */
+    /** Render the current frame (background + pieces + selection highlight + capture flashes). */
     Img render(const GameSnapshot& snap);
 
     int cellSize() const { return cellSize_; }

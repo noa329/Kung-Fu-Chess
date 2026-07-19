@@ -29,6 +29,17 @@ void GameEngine::applyCaptureEvents(const std::vector<CaptureEvent>& events) {
         if (e.wasKing) gameOver = true;
         int value = pieceValue(e.capturedKind);
         if (e.capturedColor == 'w') blackScore_ += value; else whiteScore_ += value;
+        activeCaptures_.push_back({e.at, e.capturedColor, e.wasKing, clock_, clock_ + CAPTURE_EFFECT_MS});
+    }
+}
+
+void GameEngine::pruneCaptureFlashes() {
+    for (auto it = activeCaptures_.begin(); it != activeCaptures_.end(); ) {
+        if (it->endTime <= clock_) {
+            it = activeCaptures_.erase(it);
+        } else {
+            ++it;
+        }
     }
 }
 
@@ -50,6 +61,7 @@ void GameEngine::wait(int ms) {
     clock_ += ms;
     auto events = arbiter.advance(ms);
     applyCaptureEvents(events);
+    pruneCaptureFlashes();
 }
 
 void GameEngine::jump(const Position& pos) {
@@ -148,6 +160,15 @@ GameSnapshot GameEngine::snapshot() const {
             }
             snap.cellStates[r][c] = state;
         }
+    }
+    for (const auto& ac : activeCaptures_) {
+        long long duration = ac.endTime - ac.startTime;
+        double progress = (duration > 0)
+            ? static_cast<double>(clock_ - ac.startTime) / static_cast<double>(duration)
+            : 1.0;
+        if (progress < 0.0) progress = 0.0;
+        if (progress > 1.0) progress = 1.0;
+        snap.captureFlashes.push_back({ac.at, ac.capturedColor, ac.wasKing, progress});
     }
     return snap;
 }

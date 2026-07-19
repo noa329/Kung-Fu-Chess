@@ -100,5 +100,20 @@ Img BoardView::render(const GameSnapshot& snap) {
                          cellSize_, cellSize_, cv::Scalar(0, 255, 255, 255), 3);
     }
 
+    for (const auto& flash : snap.captureFlashes) {
+        const double t = flash.progress;
+        const int cx = static_cast<int>(std::round(flash.at.col * cellSize_ + cellSize_ / 2.0));
+        const int cy = static_cast<int>(std::round(flash.at.row * cellSize_ + cellSize_ / 2.0));
+        double radius = cellSize_ * (0.30 + 0.25 * t);
+        int thickness = 2 + static_cast<int>(std::round(3 * t));
+        if (flash.wasKing) {
+            radius *= 1.15;
+            thickness += 1;
+        }
+        // Orange (0,165,255) fading to red (0,0,255) as the flash decays.
+        int green = static_cast<int>(std::round(165 * (1.0 - t)));
+        frame.circle(cx, cy, static_cast<int>(std::round(radius)), cv::Scalar(0, green, 255, 255), thickness);
+    }
+
     return frame;
 }
