@@ -1,5 +1,6 @@
 #include "img.hpp"
 #include "Board_view.hpp"
+#include "Hud_view.hpp"
 #include "GameEngine.hpp"
 #include "Controller.hpp"
 #include <iostream>
@@ -31,16 +32,27 @@ std::vector<std::vector<std::string>> standardStartingPosition() {
     };
 }
 
+struct MouseContext {
+    Controller* controller;
+    HudView* hud;
+};
+
 // EVENT_LBUTTONDOWN selects/moves (Controller::handleClick), EVENT_RBUTTONDOWN
-// triggers a jump in place (Controller::handleJump) - userdata is a Controller*.
-void onMouse(int event, int x, int y, int /*flags*/, void* userdata) {
-    auto* controller = static_cast<Controller*>(userdata);
-    if (!controller) return;
+// triggers a jump in place (Controller::handleJump), EVENT_MOUSEWHEEL scrolls
+// whichever move-log panel the cursor is over. Click/jump coordinates are
+// corrected by the HUD's board origin before reaching Controller, since the
+// HUD canvas is wider than the board itself - Controller still owns the only
+// pixel->Position conversion, this just adjusts the input coordinate frame.
+void onMouse(int event, int x, int y, int flags, void* userdata) {
+    auto* ctx = static_cast<MouseContext*>(userdata);
+    if (!ctx || !ctx->controller || !ctx->hud) return;
 
     if (event == cv::EVENT_LBUTTONDOWN) {
-        controller->handleClick(x, y);
+        ctx->controller->handleClick(x - ctx->hud->boardOriginX(), y - ctx->hud->boardOriginY());
     } else if (event == cv::EVENT_RBUTTONDOWN) {
-        controller->handleJump(x, y);
+        ctx->controller->handleJump(x - ctx->hud->boardOriginX(), y - ctx->hud->boardOriginY());
+    } else if (event == cv::EVENT_MOUSEWHEEL) {
+        ctx->hud->handleScroll(x, y, cv::getMouseWheelDelta(flags));
     }
 }
 
@@ -59,9 +71,11 @@ int main() {
         GameEngine engine;
         engine.loadBoard(standardStartingPosition());
         Controller controller(engine, view.cellSize());
+        HudView hud;
+        MouseContext mouseCtx{&controller, &hud};
 
         const std::string window_name = "KungFu Chess";
-        Img::on_mouse(window_name, &onMouse, &controller);
+        Img::on_mouse(window_name, &onMouse, &mouseCtx);
 
         int64 last_tick = cv::getTickCount();
         const double tick_freq = cv::getTickFrequency();
@@ -80,7 +94,8 @@ int main() {
             view.syncFromSnapshot(snap);
             view.update(dt_ms);
 
-            Img frame = view.render(snap);
+            Img boardFrame = view.render(snap);
+            Img frame = hud.compose(boardFrame, snap);
             int key = frame.show_frame(window_name, 16); // ~60 FPS poll
             if (key == 27) { // ESC
                 break;

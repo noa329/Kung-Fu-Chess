@@ -10,6 +10,9 @@ public:
     Img(const Img& other);
     Img& operator=(const Img& other);
 
+    /** Blank canvas of the given size, filled with a solid color (default opaque black). */
+    Img(int width, int height, const cv::Scalar& fill = cv::Scalar(0, 0, 0, 255));
+
     Img& read(const std::string& path,
               const std::pair<int, int>& size = {},
               bool keep_aspect = false,

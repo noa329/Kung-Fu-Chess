@@ -10,6 +10,10 @@ Img::Img(const Img& other) {
     img = other.img.clone();
 }
 
+Img::Img(int width, int height, const cv::Scalar& fill) {
+    img = cv::Mat(height, width, CV_8UC4, fill);
+}
+
 Img& Img::operator=(const Img& other) {
     if (this != &other) {
         img = other.img.clone();
@@ -148,7 +152,7 @@ int Img::show_frame(const std::string& window_name, int delay_ms) {
 }
 
 void Img::on_mouse(const std::string& window_name, cv::MouseCallback callback, void* userdata) {
-    cv::namedWindow(window_name, cv::WINDOW_AUTOSIZE);
+    cv::namedWindow(window_name, cv::WINDOW_NORMAL);
     cv::setMouseCallback(window_name, callback, userdata);
 }
 

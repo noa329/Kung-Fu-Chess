@@ -13,6 +13,7 @@
 kungfu_chess
 run_tests.exe
 build/
+build_verify/
 out/
 
 # --- קבצי סביבת עבודה ו-CMake ---
