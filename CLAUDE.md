@@ -135,6 +135,20 @@ expected from early on in this project. It'll disappear on its own once
 real art replaces the placeholders — don't spend time investigating it as
 a rendering bug.
 
+Related, confirmed by tracing `BoardView`'s actual per-frame animator state
+(not just eyeballing renders): `pieces2`'s `long_rest` sprite frames are
+visually near-identical to its `idle` frames (different files, no color/pose
+distinction) — unlike `pieces1`, which at least bakes in the state name as
+text. So a piece resting after a landed move can look unchanged in
+`pieces2` even though `PieceAnimator` really did switch state and the
+cooldown really is being enforced (`GameEngine`/`RealTimeArbiter` reject
+the move). Also note the two sets aren't config-symmetric:
+`pieces1/PW/states/long_rest/config.json` has `"is_loop": false` (one-shot,
+auto-returns to `idle` when finished), while `pieces2`'s has `"is_loop":
+true` (loops forever until the engine's snapshot says otherwise) — both are
+valid, but don't assume the two sets behave identically if you're
+debugging animation timing.
+
 ## Architecture
 
 The engine is deliberately layered into 8 modules, each under matching

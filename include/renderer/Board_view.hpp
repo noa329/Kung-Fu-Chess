@@ -39,6 +39,15 @@ public:
 
     int cellSize() const { return cellSize_; }
 
+    /** Debug/test-only: the cached animator's actual current state at a
+     *  board cell, or "" if nothing is cached there. Lets headless probes
+     *  verify BoardView really applied a state, not just infer it from
+     *  rendered pixels. */
+    std::string debugAnimatorState(int r, int c) const {
+        auto it = cells_.find({r, c});
+        return it != cells_.end() ? it->second.anim.state() : std::string();
+    }
+
 private:
     struct AnimatedCell {
         std::string pieceCode;   // sprite-folder code, e.g. "PW"
