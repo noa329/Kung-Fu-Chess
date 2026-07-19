@@ -48,6 +48,10 @@ void GameEngine::setPlayerNames(const std::string& whiteName, const std::string&
     blackName_ = blackName;
 }
 
+void GameEngine::setRestDurations(long long longRestMs, long long shortRestMs) {
+    arbiter.setRestDurations(longRestMs, shortRestMs);
+}
+
 bool GameEngine::isMovementLegal(std::shared_ptr<Piece> piece, const Position& from,
                                   const Position& to, bool isCapture) const {
     RuleEngine engine(board);

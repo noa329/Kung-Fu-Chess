@@ -34,6 +34,11 @@ bool RealTimeArbiter::isResting(const Position& pos, bool* out_isLongRest) const
     return false;
 }
 
+void RealTimeArbiter::setRestDurations(long long longRestMs, long long shortRestMs) {
+    longRestMs_ = longRestMs;
+    shortRestMs_ = shortRestMs;
+}
+
 long long RealTimeArbiter::calculateTravelTime(const Position& from, const Position& to, bool isCapture) const {
     if (isCapture) {
         return CAPTURE_DURATION_MS;
@@ -97,7 +102,7 @@ void RealTimeArbiter::resolveArrival(const PendingMove& pm, std::vector<CaptureE
         }
     }
 
-    restingPieces.push_back({pm.to, currentTime + LONG_REST_MS, /*isLongRest=*/true});
+    restingPieces.push_back({pm.to, currentTime + longRestMs_, /*isLongRest=*/true});
 }
 
 void RealTimeArbiter::finalizeReadyMoves(std::vector<CaptureEvent>& events) {
@@ -114,7 +119,7 @@ void RealTimeArbiter::finalizeReadyMoves(std::vector<CaptureEvent>& events) {
 void RealTimeArbiter::finalizeAirborne() {
     for (auto it = airbornePieces.begin(); it != airbornePieces.end(); ) {
         if (it->endTime <= currentTime) {
-            restingPieces.push_back({it->pos, currentTime + SHORT_REST_MS, /*isLongRest=*/false});
+            restingPieces.push_back({it->pos, currentTime + shortRestMs_, /*isLongRest=*/false});
             it = airbornePieces.erase(it);
         } else {
             ++it;

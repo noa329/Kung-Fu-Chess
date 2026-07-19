@@ -72,6 +72,7 @@ public:
     void wait(int ms);
 
     void setPlayerNames(const std::string& whiteName, const std::string& blackName);
+    void setRestDurations(long long longRestMs, long long shortRestMs);
     const std::string& getWhiteName() const { return whiteName_; }
     const std::string& getBlackName() const { return blackName_; }
 

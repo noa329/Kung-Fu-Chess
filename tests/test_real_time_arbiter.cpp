@@ -146,6 +146,36 @@ TEST_CASE("a completed jump puts the piece into short rest until it expires") {
     CHECK(arbiter.isResting({0,0}) == false);
 }
 
+TEST_CASE("setRestDurations overrides the long-rest cooldown length") {
+    Board board;
+    board.setGrid({{"wR", ".", "."}});
+    RealTimeArbiter arbiter(board);
+    arbiter.setRestDurations(/*longRestMs=*/300, /*shortRestMs=*/150);
+    auto rook = board.getCell(0, 0);
+    arbiter.scheduleMove({0,0}, {0,2}, rook, /*isCapture=*/false); // distance 2 -> 2000ms
+    arbiter.advance(2000); // lands at (0,2)
+    CHECK(arbiter.isResting({0,2}) == true);
+    arbiter.advance(299);
+    CHECK(arbiter.isResting({0,2}) == true);
+    arbiter.advance(1);
+    CHECK(arbiter.isResting({0,2}) == false);
+}
+
+TEST_CASE("setRestDurations overrides the short-rest (jump) cooldown length") {
+    Board board;
+    board.setGrid({{"wN", "."}});
+    RealTimeArbiter arbiter(board);
+    arbiter.setRestDurations(/*longRestMs=*/300, /*shortRestMs=*/150);
+    auto knight = board.getCell(0, 0);
+    arbiter.scheduleJump({0,0}, knight);
+    arbiter.advance(1000); // jump ends
+    CHECK(arbiter.isResting({0,0}) == true);
+    arbiter.advance(149);
+    CHECK(arbiter.isResting({0,0}) == true);
+    arbiter.advance(1);
+    CHECK(arbiter.isResting({0,0}) == false);
+}
+
 TEST_CASE("a blocked move (friendly occupant at destination) does not put anything into rest") {
     Board board;
     board.setGrid({{"wR", ".", "wP"}});

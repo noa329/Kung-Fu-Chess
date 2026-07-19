@@ -201,6 +201,25 @@ TEST_CASE("a piece in short rest after a jump cannot jump again until the cooldo
     CHECK(engine.snapshot().whiteMoves.size() == 2);
 }
 
+// שלב 7: משכי מנוחה מבוססי-קונפיג - GameEngine::setRestDurations מעביר את
+// הערכים ל-RealTimeArbiter; אם אף אחד לא קורא לזה, ברירת המחדל (800/500)
+// ממשיכה לעבוד בדיוק כמו קודם.
+
+TEST_CASE("GameEngine::setRestDurations overrides how long a landed move's long_rest lasts") {
+    GameEngine engine;
+    engine.loadBoard({{"wR", ".", "."}});
+    engine.setRestDurations(/*longRestMs=*/300, /*shortRestMs=*/150);
+    engine.select({0, 0});
+    engine.select({0, 2}); // distance 2 -> 2000ms
+    engine.wait(2000); // lands, long_rest now lasts 300ms instead of 800ms
+
+    CHECK(engine.snapshot().cellStates[0][2] == "long_rest");
+    engine.wait(299);
+    CHECK(engine.snapshot().cellStates[0][2] == "long_rest");
+    engine.wait(1);
+    CHECK(engine.snapshot().cellStates[0][2] == "idle");
+}
+
 // שלב 4: הבזק תפיסה (capture flash) - אפקט חזותי בלבד, לא משפיע על חוקיות
 // או על boardTokens; דועך במשך CAPTURE_EFFECT_MS ואז נעלם מה-snapshot.
 
