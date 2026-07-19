@@ -2,7 +2,7 @@ TARGET = kungfu_chess
 
 # הגדרות כלליות
 CXX = g++
-CXXFLAGS = -Wall -Wextra -std=c++17 --coverage
+CXXFLAGS = -Wall -Wextra -std=c++17
 TARGET = run_tests.exe
 
 # איסוף קבצים
