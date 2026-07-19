@@ -149,3 +149,54 @@ TEST_CASE("a jump is appended to the history too") {
     CHECK(snap.whiteMoves[0].color == 'w');
     CHECK(snap.whiteMoves[0].notation == "a1");
 }
+
+// שלב 3: אכיפת מנוחה (cooldown) - כלי שהגיע ליעד (long_rest) או שסיים
+// קפיצה (short_rest) לא יכול לזוז/לקפוץ שוב עד שהמנוחה מסתיימת.
+
+TEST_CASE("a piece in long rest after landing cannot be moved again until the cooldown expires") {
+    GameEngine engine;
+    engine.loadBoard({{"wR", ".", ".", ".", "."}});
+    engine.select({0, 0});
+    engine.select({0, 2}); // distance 2 -> 2000ms
+    engine.wait(2000); // lands at (0,2), enters long rest
+
+    CHECK(engine.snapshot().cellStates[0][2] == "long_rest");
+
+    // attempt to move it again immediately - must be silently rejected
+    engine.select({0, 2});
+    engine.select({0, 4});
+    CHECK(engine.snapshot().boardTokens == std::vector<std::vector<std::string>>{{".", ".", "wR", ".", "."}});
+
+    engine.wait(799); // 799ms into the 800ms long rest
+    CHECK(engine.snapshot().cellStates[0][2] == "long_rest");
+
+    engine.wait(1); // rest expires exactly now
+    CHECK(engine.snapshot().cellStates[0][2] == "idle");
+
+    // the same move now succeeds
+    engine.select({0, 2});
+    engine.select({0, 4});
+    engine.wait(2000);
+    CHECK(engine.snapshot().boardTokens == std::vector<std::vector<std::string>>{{".", ".", ".", ".", "wR"}});
+}
+
+TEST_CASE("a piece in short rest after a jump cannot jump again until the cooldown expires") {
+    GameEngine engine;
+    engine.loadBoard({{"wN", "."}});
+    engine.jump({0, 0});
+    engine.wait(1000); // jump duration elapses, piece lands in short rest
+
+    CHECK(engine.snapshot().cellStates[0][0] == "short_rest");
+
+    engine.jump({0, 0}); // attempt again immediately - must be silently rejected
+    CHECK(engine.snapshot().whiteMoves.size() == 1); // no new history entry
+
+    engine.wait(499); // 499ms into the 500ms short rest
+    CHECK(engine.snapshot().cellStates[0][0] == "short_rest");
+
+    engine.wait(1); // rest expires exactly now
+    CHECK(engine.snapshot().cellStates[0][0] == "idle");
+
+    engine.jump({0, 0}); // now succeeds
+    CHECK(engine.snapshot().whiteMoves.size() == 2);
+}

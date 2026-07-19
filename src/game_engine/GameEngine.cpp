@@ -42,6 +42,7 @@ bool GameEngine::isMovementLegal(std::shared_ptr<Piece> piece, const Position& f
     RuleEngine engine(board);
     if (!engine.isLegal(piece, from, to, isCapture)) return false;
     if (arbiter.hasPendingMoveTo(to)) return false;
+    if (arbiter.isResting(from)) return false;
     return true;
 }
 
@@ -59,6 +60,7 @@ void GameEngine::jump(const Position& pos) {
     if (!piece) return;
     if (arbiter.hasPendingMoveFrom(pos)) return;
     if (arbiter.isAirborne(pos)) return;
+    if (arbiter.isResting(pos)) return;
 
     arbiter.scheduleJump(pos, piece);
     moveHistory_.push_back({clock_, piece->getColor(), squareName(pos, board.getRowCount())});
@@ -137,6 +139,11 @@ GameSnapshot GameEngine::snapshot() const {
                     snap.moveProgress[r][c] = mp.progress;
                 } else if (arbiter.isAirborne(pos)) {
                     state = "jump";
+                } else {
+                    bool isLongRest = false;
+                    if (arbiter.isResting(pos, &isLongRest)) {
+                        state = isLongRest ? "long_rest" : "short_rest";
+                    }
                 }
             }
             snap.cellStates[r][c] = state;
