@@ -49,7 +49,7 @@ void onMouse(int event, int x, int y, int /*flags*/, void* userdata) {
 int main() {
     try {
         BoardView view;
-        if (!view.init(ASSETS_ROOT, "pieces1")) {
+        if (!view.init(ASSETS_ROOT, "pieces2")) {
             std::cerr << "Failed to load board/pieces from \"" << ASSETS_ROOT
                       << "\". Check KUNGFU_ASSETS_ROOT (see CMakeLists.txt) or ASSETS_ROOT in main.cpp."
                       << std::endl;
