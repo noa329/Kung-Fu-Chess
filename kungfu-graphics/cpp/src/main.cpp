@@ -3,6 +3,7 @@
 #include "Hud_view.hpp"
 #include "GameEngine.hpp"
 #include "Controller.hpp"
+#include "RestDurationLoader.hpp"
 #include <iostream>
 #include <opencv2/opencv.hpp>
 
@@ -16,6 +17,7 @@
 #define KUNGFU_ASSETS_ROOT "../../kungfu-graphics"
 #endif
 static const std::string ASSETS_ROOT = KUNGFU_ASSETS_ROOT;
+static const std::string PIECE_SET = "pieces2";
 
 namespace {
 
@@ -61,7 +63,7 @@ void onMouse(int event, int x, int y, int flags, void* userdata) {
 int main() {
     try {
         BoardView view;
-        if (!view.init(ASSETS_ROOT, "pieces2")) {
+        if (!view.init(ASSETS_ROOT, PIECE_SET)) {
             std::cerr << "Failed to load board/pieces from \"" << ASSETS_ROOT
                       << "\". Check KUNGFU_ASSETS_ROOT (see CMakeLists.txt) or ASSETS_ROOT in main.cpp."
                       << std::endl;
@@ -70,6 +72,20 @@ int main() {
 
         GameEngine engine;
         engine.loadBoard(standardStartingPosition());
+
+        // Real long_rest/short_rest durations derived from PIECE_SET's own
+        // sprite config, replacing RealTimeArbiter's hardcoded 800/500ms
+        // guesses. Falls back to those defaults (leaves setRestDurations
+        // uncalled) if the representative sprite folder is missing/unreadable.
+        if (auto restDurations = computeRestDurationsFromSprites(ASSETS_ROOT, PIECE_SET, "PW")) {
+            engine.setRestDurations(restDurations->longRestMs, restDurations->shortRestMs);
+            std::cout << "Rest durations from " << PIECE_SET << ": long_rest="
+                      << restDurations->longRestMs << "ms short_rest="
+                      << restDurations->shortRestMs << "ms" << std::endl;
+        } else {
+            std::cerr << "Warning: could not compute rest durations from " << PIECE_SET
+                      << "/PW sprites; using the built-in 800ms/500ms defaults." << std::endl;
+        }
         Controller controller(engine, view.cellSize());
         HudView hud;
         MouseContext mouseCtx{&controller, &hud};
