@@ -417,3 +417,48 @@ build/dist שלא נשמר בגיט בעצמו (אם כי כרגע לא הוספ
 צריחים, אחד לבן ואחד שחור, שניהם מגיעים ליעד שלהם בלי לחכות זה לזה).
 וידאתי גם מחדש שדרישת החובה (אין הפניית כלי שכבר באמצע הליכה) עדיין
 עומדת - לא נפגעה מהשינוי הזה.
+
+## שלב תוספת: משכי מנוחה (rest cooldown) מבוססי-קונפיג במקום ניחושים
+
+**מה נעשה:** `RealTimeArbiter::LONG_REST_MS`/`SHORT_REST_MS` (קבועים
+סטטיים, ניחושים: 800/500) הפכו לשדות מופע `longRestMs_`/`shortRestMs_`
+עם אותם ברירות מחדל, ונוספה `setRestDurations(longRestMs, shortRestMs)`
+- אופציונלית, לא חובה לקרוא לה. `GameEngine` קיבל מתודת-מעביר דקה
+מקבילה. שכבת ה-renderer קיבלה מחלקת עזר חדשה `RestDurationLoader`
+(`include/renderer/RestDurationLoader.hpp` +
+`src/renderer/RestDurationLoader.cpp`) שמחשבת את משך ה-`long_rest`/
+`short_rest` האמיתי מתוך קונפיג הספרייט של כלי מייצג (`frame_count /
+frames_per_sec * 1000`), תוך שימוש חוזר במנגנון הטעינה/פרסור הקיים
+של `SpriteAnimation` (ולא כתיבת regex משלה). `kungfu-graphics/cpp/
+src/main.cpp` קורא לזה פעם אחת ב-startup, אחרי `BoardView::init`,
+ומעביר את התוצאה ל-`GameEngine::setRestDurations`.
+
+**למה:** האילוץ המרכזי היה ש-`model`/`real_time_arbiter`/`game_engine`
+חייבים להישאר ניתנים לבנייה עם ה-`Makefile` הרגיל, בלי שום תלות
+ב-OpenCV או במערכת הקבצים (כי אלה משמשים את חבילת הבדיקות העצמאית).
+הפתרון: השכבה שמחשבת את הערכים האמיתיים (renderer, שכבר תלויה
+ב-OpenCV/filesystem דרך `Sprite_animation.cpp`) מזריקה אותם פנימה
+דרך setter אופציונלי, ולא ש-`RealTimeArbiter` עצמו קורא קבצים. אם
+אף אחד לא קורא ל-setter (למשל, בדיקות ה-doctest או הבינארי הטקסטואלי)
+- ההתנהגות זהה **לחלוטין** למה שהייתה קודם (800ms/500ms).
+
+**ממצא לפני המימוש:** נבדקו כל 12 קודי הכלים בשני סטי הספריי
+(`pieces1`, `pieces2`) - אחידים לגמרי: `short_rest` = 5 פריימים
+@ 8fps = 625ms בדיוק, `long_rest` = 5 פריימים @ 6fps = 833ms בדיוק
+(מעוגל). לכן ערך גלובלי יחיד מספיק - לא נדרש מנגנון "משך לפי
+סוג-כלי" מורכב יותר, כפי שהמסמך המקורי (`docs/tasks/
+config-driven-rest-durations.md`) ביקש לוודא לפני שמניחים זאת.
+
+**בדיקות:** `tests/test_real_time_arbiter.cpp`/`test_game_engine.cpp`
+קיבלו מקרי בדיקה חדשים ל-`setRestDurations` (גם ברמת ה-arbiter וגם
+דרך ה-GameEngine), כולל וידוא שברירת המחדל (ללא קריאה ל-setter)
+נשארת זהה. כל 66 מקרי הבדיקה בפרויקט (168 assertions) ירוקים דרך
+ה-Makefile הרגיל, בלי שום תלות חדשה ב-OpenCV/filesystem נוספה
+לשכבות המנוע. אימות headless נפרד (אותה תבנית כמו שלב 4): בניתי
+בינארי חד-פעמי שמריץ בפועל את `computeRestDurationsFromSprites` מול
+`pieces1`/`pieces2` האמיתיים, מוודא 833ms/625ms בדיוק בשניהם, מוודא
+נפילה חלקה ל-`std::nullopt` (לא קריסה) כשתיקיית כלי מייצג חסרה,
+ומריץ `GameEngine` אמיתי עם הערכים המחושבים כדי לוודא אכיפת cooldown
+מדויקת (עדיין נדחה מ"ל-אחד לפני" הזמן המדויק, מתקבל בדיוק אז). גם
+ה-build הגרפי המלא (CMake+MSBuild, `build/KungFuChess.sln`) נבנה
+מחדש בהצלחה (0 warnings/errors) עם הקובץ החדש בגרף המקור.
