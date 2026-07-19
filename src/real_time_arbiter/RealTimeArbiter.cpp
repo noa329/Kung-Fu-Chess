@@ -24,6 +24,16 @@ bool RealTimeArbiter::isAirborne(const Position& pos) const {
     return false;
 }
 
+bool RealTimeArbiter::isResting(const Position& pos, bool* out_isLongRest) const {
+    for (const auto& r : restingPieces) {
+        if (r.pos == pos) {
+            if (out_isLongRest) *out_isLongRest = r.isLongRest;
+            return true;
+        }
+    }
+    return false;
+}
+
 long long RealTimeArbiter::calculateTravelTime(const Position& from, const Position& to, bool isCapture) const {
     if (isCapture) {
         return CAPTURE_DURATION_MS;
@@ -86,6 +96,8 @@ void RealTimeArbiter::resolveArrival(const PendingMove& pm, std::vector<CaptureE
             board.setCell(pm.to.row, pm.to.col, std::make_shared<Queen>(pm.piece->getColor()));
         }
     }
+
+    restingPieces.push_back({pm.to, currentTime + LONG_REST_MS, /*isLongRest=*/true});
 }
 
 void RealTimeArbiter::finalizeReadyMoves(std::vector<CaptureEvent>& events) {
@@ -102,7 +114,18 @@ void RealTimeArbiter::finalizeReadyMoves(std::vector<CaptureEvent>& events) {
 void RealTimeArbiter::finalizeAirborne() {
     for (auto it = airbornePieces.begin(); it != airbornePieces.end(); ) {
         if (it->endTime <= currentTime) {
+            restingPieces.push_back({it->pos, currentTime + SHORT_REST_MS, /*isLongRest=*/false});
             it = airbornePieces.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void RealTimeArbiter::finalizeResting() {
+    for (auto it = restingPieces.begin(); it != restingPieces.end(); ) {
+        if (it->endTime <= currentTime) {
+            it = restingPieces.erase(it);
         } else {
             ++it;
         }
@@ -114,5 +137,6 @@ std::vector<CaptureEvent> RealTimeArbiter::advance(int ms) {
     std::vector<CaptureEvent> events;
     finalizeReadyMoves(events);
     finalizeAirborne();
+    finalizeResting();
     return events;
 }

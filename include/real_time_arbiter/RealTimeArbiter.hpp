@@ -34,20 +34,30 @@ struct MoveProgress {
     double progress; // 0.0 (just scheduled) .. 1.0 (arriving)
 };
 
+struct RestingState {
+    Position pos;
+    long long endTime;
+    bool isLongRest;
+};
+
 class RealTimeArbiter {
     Board& board;
     long long currentTime = 0;
     std::vector<PendingMove> pendingMoves;
     std::vector<AirborneState> airbornePieces;
+    std::vector<RestingState> restingPieces;
 
     static const long long CELL_TRAVEL_TIME_MS = 1000;
     static const long long CAPTURE_DURATION_MS = 1000;
     static const long long JUMP_DURATION_MS = 1000;
+    static const long long LONG_REST_MS = 800;
+    static const long long SHORT_REST_MS = 500;
 
     long long calculateTravelTime(const Position& from, const Position& to, bool isCapture) const;
     void resolveArrival(const PendingMove& pm, std::vector<CaptureEvent>& events);
     void finalizeReadyMoves(std::vector<CaptureEvent>& events);
     void finalizeAirborne();
+    void finalizeResting();
 
 public:
     explicit RealTimeArbiter(Board& b) : board(b) {}
@@ -55,6 +65,7 @@ public:
     bool hasPendingMoveFrom(const Position& pos) const;
     bool hasPendingMoveTo(const Position& pos) const;
     bool isAirborne(const Position& pos) const;
+    bool isResting(const Position& pos, bool* out_isLongRest = nullptr) const;
 
     bool getMoveProgress(const Position& pos, MoveProgress& out) const;
 

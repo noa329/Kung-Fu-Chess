@@ -113,3 +113,46 @@ TEST_CASE("a capture event reports the captured piece's kind") {
     CHECK(events[0].capturedKind == PieceKind::Knight);
     CHECK(events[0].capturedColor == 'b');
 }
+
+TEST_CASE("a landed move puts the destination into long rest until it expires") {
+    Board board;
+    board.setGrid({{"wR", ".", "."}});
+    RealTimeArbiter arbiter(board);
+    auto rook = board.getCell(0, 0);
+    arbiter.scheduleMove({0,0}, {0,2}, rook, /*isCapture=*/false); // distance 2 -> 2000ms
+    arbiter.advance(2000); // lands at (0,2)
+    bool isLongRest = false;
+    CHECK(arbiter.isResting({0,2}, &isLongRest) == true);
+    CHECK(isLongRest == true);
+    arbiter.advance(799);
+    CHECK(arbiter.isResting({0,2}) == true);
+    arbiter.advance(1);
+    CHECK(arbiter.isResting({0,2}) == false);
+}
+
+TEST_CASE("a completed jump puts the piece into short rest until it expires") {
+    Board board;
+    board.setGrid({{"wN", "."}});
+    RealTimeArbiter arbiter(board);
+    auto knight = board.getCell(0, 0);
+    arbiter.scheduleJump({0,0}, knight);
+    arbiter.advance(1000); // jump ends
+    bool isLongRest = true;
+    CHECK(arbiter.isResting({0,0}, &isLongRest) == true);
+    CHECK(isLongRest == false);
+    arbiter.advance(499);
+    CHECK(arbiter.isResting({0,0}) == true);
+    arbiter.advance(1);
+    CHECK(arbiter.isResting({0,0}) == false);
+}
+
+TEST_CASE("a blocked move (friendly occupant at destination) does not put anything into rest") {
+    Board board;
+    board.setGrid({{"wR", ".", "wP"}});
+    RealTimeArbiter arbiter(board);
+    auto rook = board.getCell(0, 0);
+    arbiter.scheduleMove({0,0}, {0,2}, rook, /*isCapture=*/false);
+    arbiter.advance(2000);
+    CHECK(arbiter.isResting({0,0}) == false);
+    CHECK(arbiter.isResting({0,2}) == false);
+}
