@@ -125,6 +125,16 @@ tasks — violating any of them is a scope error, not a style nitpick:
   compositing pass that calls `BoardView::render()` and draws additional
   panels/bars around the returned image — never edits inside it.
 
+## Known placeholder-art artifact (not a bug)
+
+Rendered frames show text like `"long_rest"` / a frame number baked over
+the piece sprite. This is **not** rendered by any code — it's baked
+directly into the placeholder sprite PNGs in `kungfu-graphics/pieces1/` and
+`pieces2/` (the assets are debug placeholders, not final art) and is known/
+expected from early on in this project. It'll disappear on its own once
+real art replaces the placeholders — don't spend time investigating it as
+a rendering bug.
+
 ## Architecture
 
 The engine is deliberately layered into 8 modules, each under matching
