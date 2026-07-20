@@ -35,6 +35,7 @@ struct GameSnapshot {
     std::vector<std::vector<double>> moveProgress;
     Position selected;
     bool gameOver;
+    std::string result; // "White Wins" | "Black Wins" | "Draw", meaningful only when gameOver
     std::string whiteName;
     std::string blackName;
     int whiteScore;
@@ -49,6 +50,7 @@ class GameEngine {
     RealTimeArbiter arbiter;
     Position selected = {-1, -1};
     bool gameOver = false;
+    char winnerColor_ = '\0'; // 'w' | 'b' | '\0' (no winner yet, or draw)
     std::string whiteName_ = "White";
     std::string blackName_ = "Black";
     int whiteScore_ = 0;

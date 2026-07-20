@@ -79,6 +79,39 @@ void HudView::drawCoordinates(Img& canvas, int boardW, int boardH) const {
     }
 }
 
+void HudView::drawGameOverBanner(Img& canvas, const GameSnapshot& snap, int boardW, int boardH) const {
+    int bannerW = boardW;
+    int bannerH = boardH / 4;
+    int bx = boardOriginX();
+    int by = boardOriginY() + boardH / 2 - bannerH / 2;
+
+    // Partially-transparent black (alpha 170/255) so board squares underneath
+    // stay faintly visible; draw_on() below blends per-pixel using this alpha.
+    Img banner(bannerW, bannerH, cv::Scalar(0, 0, 0, 170));
+
+    const std::string title = "GAME OVER";
+    const std::string subtitle = snap.result;
+    const double titleScale = 1.3;
+    const int titleThickness = 3;
+    const double subtitleScale = 0.8;
+    const int subtitleThickness = 2;
+    const int lineGap = 14;
+
+    auto [titleW, titleH] = banner.text_size(title, titleScale, titleThickness);
+    auto [subW, subH] = banner.text_size(subtitle, subtitleScale, subtitleThickness);
+
+    int blockH = titleH + lineGap + subH;
+    int titleBaselineY = (bannerH - blockH) / 2 + titleH;
+    int subBaselineY = titleBaselineY + lineGap + subH;
+
+    banner.put_text(title, (bannerW - titleW) / 2, titleBaselineY, titleScale,
+                     cv::Scalar(255, 255, 255, 255), titleThickness);
+    banner.put_text(subtitle, (bannerW - subW) / 2, subBaselineY, subtitleScale,
+                     cv::Scalar(255, 255, 255, 255), subtitleThickness);
+
+    banner.draw_on(canvas, bx, by);
+}
+
 Img HudView::compose(const Img& boardFrame, const GameSnapshot& snap) {
     int boardW = boardFrame.width();
     int boardH = boardFrame.height();
@@ -93,6 +126,10 @@ Img HudView::compose(const Img& boardFrame, const GameSnapshot& snap) {
     Img canvas(canvasW, canvasH, cv::Scalar(60, 60, 60, 255));
 
     boardFrame.draw_on(canvas, boardOriginX(), boardOriginY());
+
+    if (snap.gameOver) {
+        drawGameOverBanner(canvas, snap, boardW, boardH);
+    }
 
     // Row 0 is black's back rank, so black reads as the "top" side.
     drawBar(canvas, 0, TOP_BAR_H, canvasW, snap.blackName, snap.blackScore);

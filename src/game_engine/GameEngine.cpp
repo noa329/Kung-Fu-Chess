@@ -27,7 +27,10 @@ std::string squareName(const Position& pos, int rowCount) {
 
 void GameEngine::applyCaptureEvents(const std::vector<CaptureEvent>& events) {
     for (const auto& e : events) {
-        if (e.wasKing) gameOver = true;
+        if (e.wasKing) {
+            gameOver = true;
+            winnerColor_ = (e.capturedColor == 'w') ? 'b' : 'w';
+        }
         int value = pieceValue(e.capturedKind);
         if (e.capturedColor == 'w') blackScore_ += value; else whiteScore_ += value;
         activeCaptures_.push_back({e.at, e.capturedColor, e.wasKing, clock_, clock_ + CAPTURE_EFFECT_MS});
@@ -131,6 +134,11 @@ GameSnapshot GameEngine::snapshot() const {
     GameSnapshot snap;
     snap.selected = selected;
     snap.gameOver = gameOver;
+    if (gameOver) {
+        snap.result = (winnerColor_ == 'w') ? "White Wins"
+                    : (winnerColor_ == 'b') ? "Black Wins"
+                    : "Draw";
+    }
     snap.whiteName = whiteName_;
     snap.blackName = blackName_;
     snap.whiteScore = whiteScore_;

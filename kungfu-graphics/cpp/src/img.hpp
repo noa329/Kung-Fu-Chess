@@ -25,7 +25,12 @@ public:
                   const cv::Scalar& color = cv::Scalar(255, 255, 255, 255),
                   int thickness = 1);
 
-    
+    /** Pixel (width, height) that put_text would occupy for this string at
+     *  the given scale/thickness - lets callers center text without reaching
+     *  around Img for cv::getTextSize themselves. */
+    std::pair<int, int> text_size(const std::string& txt, double font_size, int thickness) const;
+
+
     void rectangle(int x, int y, int w, int h,
                    const cv::Scalar& color = cv::Scalar(0, 255, 255, 255),
                    int thickness = 2);

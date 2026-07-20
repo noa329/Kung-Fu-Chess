@@ -118,6 +118,12 @@ void Img::put_text(const std::string& txt, int x, int y, double font_size,
                 color, thickness, cv::LINE_AA);
 }
 
+std::pair<int, int> Img::text_size(const std::string& txt, double font_size, int thickness) const {
+    int baseline = 0;
+    cv::Size size = cv::getTextSize(txt, cv::FONT_HERSHEY_SIMPLEX, font_size, thickness, &baseline);
+    return {size.width, size.height};
+}
+
 void Img::rectangle(int x, int y, int w, int h, const cv::Scalar& color, int thickness) {
     if (img.empty()) {
         throw std::runtime_error("Image not loaded.");

@@ -51,6 +51,7 @@ private:
     void drawPanel(Img& canvas, int x, int y, int h, const std::string& header,
                    const std::vector<MoveRecord>& moves, int scrollOffset) const;
     void drawCoordinates(Img& canvas, int boardW, int boardH) const;
+    void drawGameOverBanner(Img& canvas, const GameSnapshot& snap, int boardW, int boardH) const;
 
     static int visibleRows(int panelH);
     static int clampScrollOffset(int offset, size_t totalRows, int visible);
