@@ -85,6 +85,12 @@ TEST_CASE("an invalid piece letter is rejected") {
     CHECK(result.error == "ERROR INVALID_PIECE");
 }
 
+TEST_CASE("a lowercase piece letter with an otherwise-valid color is rejected") {
+    auto result = GameCommandParser::parse("Wqe2e5");
+    CHECK(result.ok == false);
+    CHECK(result.error == "ERROR INVALID_PIECE");
+}
+
 TEST_CASE("an out-of-range square is rejected") {
     auto result = GameCommandParser::parse("WQz9z9");
     CHECK(result.ok == false);
