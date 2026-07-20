@@ -22,18 +22,32 @@ section isn't fully resolved yet — don't guess and build on the guess.
 
 ## Decisions already confirmed (don't re-litigate these)
 
-- **WebSocket library:** `websocketpp` + standalone Asio. Server builds
-  under **MSYS2/g++ only** (new Makefile target, not the MSVC/CMake
-  graphics build) — the server has no OpenCV/rendering dependency, so
-  tying it to that toolchain would be pulling in a dependency it doesn't
-  need. This also means the WS library only ever has to compile under one
-  toolchain, not both.
+- **WebSocket library:** `websocketpp` + standalone Asio, fetched via
+  CMake `FetchContent` (see the CMake/build-system section below — this
+  superseded an earlier plan to hand-vendor both under `third_party/`).
+  Server builds under **MSYS2/ucrt64/g++, via CMake+Ninja — not MSVC**.
+  The server has no OpenCV/rendering dependency, so tying it to the
+  graphics build's MSVC toolchain would be pulling in a dependency it
+  doesn't need, and OpenCV's prebuilt MSVC-ABI `.lib` is the *only* reason
+  that build needs MSVC in the first place.
+- **Build system:** a new, separate `server/CMakeLists.txt` (own CMake
+  project, own `server/build/`) — not merged into
+  `kungfu-graphics/cpp/CMakeLists.txt`, and not a Makefile target either
+  (superseded the original plan). Kept separate from the graphics
+  `CMakeLists.txt` specifically because one CMake project can't cleanly
+  target MSVC for one executable and MinGW for another in the same
+  configure. The existing Makefile/`run_tests.exe`/doctest workflow is
+  untouched by any of this — see "Dual-compilation" below for how
+  `server/`'s pure-logic code still gets doctest coverage through it.
 - **Command parser location:** new `server/` layer, not `text_io/` —
   `text_io` stays scoped to the `Board:` grid format; the wire-protocol
   grammar is the server's concern.
-- **JSON:** vendor `nlohmann::json` (single header, `third_party/nlohmann/json.hpp`)
-  for both writing outgoing state and parsing incoming JSON messages
-  (login, room create/join, matchmaking status, error payloads).
+- **JSON:** `nlohmann::json`, vendored under `third_party/` (committed,
+  like `miniaudio/`) rather than `FetchContent`-only — unlike
+  `websocketpp`/Asio, `GameStateSerializer` (A4) needs doctest coverage
+  under the existing Makefile flow, which `FetchContent` can't reach (see
+  the CMake/build-system section below for the full reasoning, same for
+  the sqlite amalgamation).
 - **Shell client gameplay rendering:** text-only. The new shell client
   reuses `BoardPrinter` to print the board from each state broadcast and
   reads command strings from stdin. It never touches OpenCV. Teaching the
@@ -53,8 +67,13 @@ section isn't fully resolved yet — don't guess and build on the guess.
 ### New layers (siblings of the existing 8, not replacements)
 
 ```
-include/server/          src/server/
-    WebSocketServer.hpp       — websocketpp/asio glue: accept, route messages, tick timer
+server/                          — NEW top-level CMake project (own CMakeLists.txt, own build/)
+    CMakeLists.txt                    — FetchContent for asio/websocketpp (later: nlohmann_json/sqlite3)
+    main.cpp                          — the real accept-loop entry point, CMake-only, not dual-compiled
+                                         (mirrors kungfu-graphics/cpp/src/main.cpp not being part of run_tests.exe)
+
+include/server/          src/server/      — dual-compiled: Makefile (run_tests.exe, doctest) AND
+                                             server/CMakeLists.txt both compile these
     GameSession.hpp            — owns one GameEngine + up to 2 player connections + spectators
     SessionManager.hpp         — connection -> GameSession routing (from Phase D on; Phase A/B hardcode one session)
     GameCommandParser.hpp      — "WQe2e5" -> ParsedCommand (pure, unit-testable, no networking)
@@ -62,6 +81,11 @@ include/server/          src/server/
     AuthService.hpp            — (Phase C) login/register message handling
     MatchmakingQueue.hpp       — (Phase D)
     RoomRegistry.hpp           — (Phase E)
+    WebSocketServer.hpp/.cpp   — websocketpp/asio glue: accept, route messages, tick timer.
+                                  NOT dual-compiled (needs websocketpp/asio headers Makefile builds
+                                  don't have) - added to a new SERVER_ONLY_SRC exclusion list in the
+                                  Makefile in Task A1, mirroring the existing OPENCV_ONLY_SRC pattern
+                                  used for the renderer's OpenCV-dependent files.
 
 include/persistence/     src/persistence/
     Database.hpp                — thin SQLite C-API wrapper (open/exec/query), no game/network knowledge
@@ -74,50 +98,61 @@ client/cli/
     main.cpp                     — NEW program: shell login/lobby/gameplay client (Phase B on)
 
 third_party/
-    asio/include/                — gitignored, manual local setup, pinned at 1.18.2
-                                    (see third_party/README.md — latest/pacman 1.38 is
-                                    incompatible with websocketpp, verified not a guess)
-    websocketpp/                — vendored headers, committed
-    nlohmann/json.hpp           — vendored single header, committed
-    sqlite/sqlite3.h, sqlite3.c — vendored amalgamation, committed
-    sha256/ (name TBD)          — vendored single-header SHA-256, committed
+    miniaudio/                  — vendored single header, committed (unchanged)
+    README.md                    — documents both the committed and FetchContent-fetched dependencies
 ```
 
-**Correction from the original plan (found during Task A0):** Asio was
-originally going to be pacman-installed rather than vendored. Turned out
-not to work — the pacman `mingw-w64-ucrt-x86_64-asio` package is 1.38.0,
-which has fully removed the deprecated `io_service`/`io_service::strand`/
-`expires_from_now` API that `websocketpp` 0.8.2 (its latest tagged
-release, last updated ~2018) hard-depends on in its Asio transport —
-confirmed by a real compile failure (`'io_service' in namespace
-'websocketpp::lib::asio' does not name a type`, `m_strand->wrap(...)`:
-"base operand of '->' is not a pointer", etc.), not a guess. **Fix:** pin
-Asio at **1.18.2**, built from the upstream `chriskohlhoff/asio` tag
-rather than pacman. Verified: a minimal echo server built against this
-exact pinned pair compiles clean under g++/MSYS2 and round-trips a real
-WebSocket handshake + text frame against `scripts/ws_test_client.py`.
+Asio and `websocketpp` are **not** under `third_party/` at all any more —
+see "CMake migration" correction below. **`nlohmann::json` and sqlite are
+a different case, and stay vendored under `third_party/` (committed,
+like `miniaudio/`), not `FetchContent`-only:** unlike `websocketpp`/Asio
+(only ever touched by `server/main.cpp`'s accept loop, which is
+CMake-only and never dual-compiled), `GameStateSerializer` (A4) and
+`persistence/` (C1/C2) are *dual-compiled* pure-logic code that needs
+doctest coverage under the existing Makefile/`run_tests.exe` flow —
+`FetchContent` only populates content inside `server/build/`, which the
+Makefile has no equivalent mechanism to reach. So `nlohmann::json`
+(single header) and the sqlite amalgamation get vendored directly, same
+reasoning as `miniaudio.h`, and `server/CMakeLists.txt` references those
+same `third_party/` paths rather than fetching its own separate copies.
 
-**Second correction, made directly in `.gitignore` during Task A0 review**
-(not by me — noting it here so the plan stays accurate): `third_party/asio/`
-is gitignored, not committed. At ~5.7MB it's evidently over the line into
-"heavy third-party library" territory (same category as
-`kungfu-graphics/cpp/OpenCV_451/`), unlike the smaller `websocketpp/`
-(~1MB, stays committed, comparable to `miniaudio.h`). Full local setup
-instructions (exact pinned tag, required build flags, why the version pin
-matters) are in `third_party/README.md`.
+**First correction (found during Task A0):** Asio was originally going to
+be pacman-installed. Turned out not to work — the pacman
+`mingw-w64-ucrt-x86_64-asio` package is 1.38.0, which has fully removed
+the deprecated `io_service`/`io_service::strand`/`expires_from_now` API
+that `websocketpp` 0.8.2 (its latest tagged release, last updated ~2018)
+hard-depends on in its Asio transport — confirmed by a real compile
+failure (`'io_service' in namespace 'websocketpp::lib::asio' does not
+name a type`, `m_strand->wrap(...)`: "base operand of '->' is not a
+pointer", etc.), not a guess. **Fix:** pin Asio at **1.18.2**, from the
+upstream `chriskohlhoff/asio` tag rather than pacman.
 
-One more MinGW-specific wrinkle: `websocketpp`'s `common/thread.hpp` has
-a blanket rule that disables its C++11 `<thread>` path on any MinGW
-target (`__MINGW32__`/`__MINGW64__` defined), falling back to a
-`<boost/thread.hpp>` include we don't have — a leftover from when older
-MinGW lacked real `std::thread` support; not true of the current
-MSYS2/ucrt64 toolchain. Every build of anything including
-`websocketpp/server.hpp` needs `-D_WEBSOCKETPP_CPP11_THREAD_` to force
-the modern path. This will need to go into the Makefile in Task A1.
+**Second correction (also Task A0, this one from the instructor's
+build-system guidance rather than a technical failure):** the server
+build moved from a Makefile target to its own CMake project
+(`server/CMakeLists.txt`), staying on the MSYS2/ucrt64 toolchain via
+CMake+Ninja rather than MSVC. Once on CMake, `websocketpp` and Asio moved
+from hand-vendoring under `third_party/` to CMake `FetchContent`, pinned
+at the exact same versions (`asio-1-18-2`, `0.8.2`) the manual vendoring
+already validated — see `third_party/README.md`'s "History" section for
+the full before/after. The manually-vendored copies (`third_party/websocketpp/`,
+committed; `third_party/asio/`, gitignored) are gone from both git and
+disk.
 
-`websocketpp`, `nlohmann/json.hpp`, and the sqlite amalgamation are small
-enough to vendor directly, matching the existing `miniaudio.h` precedent
-(same reasoning now extends to the pinned Asio, per above).
+One more MinGW-specific wrinkle, unaffected by the CMake migration:
+`websocketpp`'s `common/thread.hpp` has a blanket rule that disables its
+C++11 `<thread>` path on any MinGW target (`__MINGW32__`/`__MINGW64__`
+defined), falling back to a `<boost/thread.hpp>` include we don't have —
+a leftover from when older MinGW lacked real `std::thread` support; not
+true of the current MSYS2/ucrt64 toolchain. `server/CMakeLists.txt` sets
+`-D_WEBSOCKETPP_CPP11_THREAD_` via `target_compile_definitions` to force
+the modern path.
+
+Verified end-to-end: the same echo server (now living permanently at
+`server/main.cpp`, not a throwaway) compiles clean via
+`cmake -S server -B server/build -G Ninja` + `cmake --build server/build`
+and round-trips a real WebSocket handshake + text frame against
+`scripts/ws_test_client.py`.
 
 ### Per-session `GameEngine`, and how the EventBus fits in
 
@@ -211,8 +246,8 @@ OpenCV rendering).
 
 | Task | What | Depends on | Tests |
 |---|---|---|---|
-| **A0** | Vendor `websocketpp`; document the `mingw-w64-ucrt-x86_64-asio` pacman dependency; write one reusable manual-test script (`scripts/ws_test_client.py`, plain stdlib `websockets`, no project deps) that every later phase's manual verification reuses instead of reinventing a client each time. | — | Connect the script to a trivial echo server, confirm round-trip. |
-| **A1** | New Makefile target (`server.exe` or similar) compiling `server/` + all non-OpenCV engine layers (mirrors `run_tests.exe`'s source discovery). Minimal `WebSocketServer` that accepts a connection and echoes what it receives — no game logic yet. | A0 | Manual: connect with the script, send text, see it echoed. |
+| **A0** ✅ | **Done, twice.** Originally: hand-vendored `websocketpp`+Asio under `third_party/`. Then migrated to CMake `FetchContent` (`server/CMakeLists.txt`, pinned at the same versions) once the instructor's build-system guidance called for CMake. Also wrote `scripts/ws_test_client.py` (stdlib-only hand-rolled RFC6455 client, no pip deps) reused for every later phase's manual verification. | — | Echo round-trip via `ws_test_client.py`, verified against both the original manually-vendored build and the final CMake/FetchContent build. |
+| **A1** | Partially done as a side effect of A0's CMake migration: `server/main.cpp` already accepts a connection and echoes what it receives (no game logic). Remaining for A1 proper: pull in the reused engine layers (`model`/`movement_rules`/`rule_engine`/`real_time_arbiter`/`game_engine`/`controller`/`event_bus`) as CMake sources/include dirs, and add the `SERVER_ONLY_SRC` exclusion to the Makefile so `include/server/`+`src/server/`'s *pure* pieces (once A2-A6 add them) stay dual-compiled without dragging `websocketpp`/Asio into `run_tests.exe`. | A0 | Manual: connect with the script, send text, see it echoed (already passing). |
 | **A2** | `GameCommandParser` — pure parser. `"WQe2e5"` → `ParsedCommand{color, pieceLetter, from, to}` for moves; a distinct leading token (design decision — pick and document, e.g. a `J` prefix: `"JWPe2"` for a jump) for jumps. Malformed input → an explicit parse-error result, not an exception. Needs a new algebraic→`Position` helper (the inverse of `GameEngine`'s private `squareName()`) — lives alongside the parser since only the server needs it. | — | doctest: valid move, valid jump, short/garbage string, bad color char, bad square (`"WQz9z9"`), empty string. |
 | **A3** | `GameSession::handleCommand(ParsedCommand)` — looks up the board cell at `from` via the session's `GameEngine`, validates color+piece letter against what's actually there (**fail on mismatch**, per your decision), then calls `select(from); select(to);` for moves or `jump(from)` for jumps. Returns a success/error result (error reason for a rejected/malformed command). | A2 | doctest against a real `GameEngine` instance (same pattern as `test_game_engine.cpp`): correct command schedules the right move; piece-letter mismatch is rejected *without* mutating engine state; malformed command produces an error result. |
 | **A4** | `GameStateSerializer` — `GameSnapshot` subset → JSON via `nlohmann::json`: board tokens, `cellStates`, scores, move history, `gameOver`/`result`. **Open question below** on whether `captureFlashes` belongs in this subset. | — | doctest: serialize a known snapshot, check the JSON string/parsed object has exactly the expected fields and values. |
@@ -232,7 +267,7 @@ OpenCV rendering).
 
 | Task | What | Depends on | Tests |
 |---|---|---|---|
-| **C1** | `persistence/Database` — thin SQLite C-API wrapper (open, exec, prepared-statement query helpers). Vendor sqlite3 amalgamation, add to Makefile source discovery. | — | doctest against an in-memory (`:memory:`) database: create table, insert, query round-trip. |
+| **C1** | `persistence/Database` — thin SQLite C-API wrapper (open, exec, prepared-statement query helpers). Vendor sqlite3 amalgamation under `third_party/sqlite/` (committed, like `miniaudio/` — needed by both the Makefile build, for doctest coverage, and `server/CMakeLists.txt`, which references this same path rather than fetching its own copy). | — | doctest against an in-memory (`:memory:`) database: create table, insert, query round-trip. |
 | **C2** | `persistence/UserRepository` — users table CRUD + rating read/update. Vendor the chosen SHA-256 implementation (open question below), add salt-generation + hash-and-compare helpers. | C1 | doctest: create user, find by username, wrong password rejected, rating update persists. All against `:memory:`. |
 | **C3** | `server/AuthService` — login/register message schema and handling, wired into `GameSession`'s join flow in place of B2's username-only assignment. | C2, B2 | doctest for the auth *decision* logic (given a stored user + a login attempt, accept/reject) decoupled from the socket layer. Manual: full login round-trip via `client/cli`. |
 | **C4** | Wire `client/cli`'s login prompt to ask for username **and** password; handle the reject/accept responses. **Open question below:** auto-register on first-ever username, or explicit separate register vs. login commands? | C3, B3 | Manual. |
