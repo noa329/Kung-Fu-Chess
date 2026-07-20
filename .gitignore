@@ -34,8 +34,11 @@ kungfu-graphics/cpp/OpenCV_451/
 # --- תיקיות שפה ופרויקטים פנימיים ---
 py/__pycache__/
 java/target/
+__pycache__/
 
 # --- קבצי הגשה וסקריפטים ---
 vpl_submission/
 kung_fu_chess_vpl.zip
 .scripts/
+third_party/asio/
+third_party/websocketpp/
