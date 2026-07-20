@@ -4,6 +4,9 @@ project(KungFuChessServer CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# CMAKE_CURRENT_SOURCE_DIR here = kung-fu-chess/server/
+set(MAIN_PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/..")
+
 # Headless server, no OpenCV/graphics dependency - deliberately a separate
 # CMake project from kungfu-graphics/cpp/CMakeLists.txt (which is pinned to
 # MSVC because OpenCV_451's prebuilt .lib is MSVC-ABI only). This one stays
@@ -51,13 +54,35 @@ FetchContent_Populate(websocketpp)
 # examples/tests, none of which we want. Fetch source only, use its
 # top-level directory as a header-only include path.
 
+# Reused engine layers - the same GameEngine/Controller/etc sources the
+# text-protocol Makefile build and the graphics CMake build both compile.
+# No audio/ (no sound on the server) and no renderer/text_io/text_test_runner
+# (all graphics- or text-protocol-specific, not needed here). event_bus is
+# header-only (no .cpp), just needs its include dir below.
+file(GLOB ENGINE_SOURCES
+    "${MAIN_PROJECT_ROOT}/src/model/*.cpp"
+    "${MAIN_PROJECT_ROOT}/src/movement_rules/*.cpp"
+    "${MAIN_PROJECT_ROOT}/src/real_time_arbiter/*.cpp"
+    "${MAIN_PROJECT_ROOT}/src/rule_engine/*.cpp"
+    "${MAIN_PROJECT_ROOT}/src/controller/*.cpp"
+    "${MAIN_PROJECT_ROOT}/src/game_engine/*.cpp"
+)
+
 add_executable(kungfu_server
     main.cpp
+    ${ENGINE_SOURCES}
 )
 
 target_include_directories(kungfu_server PRIVATE
     ${asio_SOURCE_DIR}/asio/include
     ${websocketpp_SOURCE_DIR}
+    "${MAIN_PROJECT_ROOT}/include/model"
+    "${MAIN_PROJECT_ROOT}/include/movement_rules"
+    "${MAIN_PROJECT_ROOT}/include/real_time_arbiter"
+    "${MAIN_PROJECT_ROOT}/include/rule_engine"
+    "${MAIN_PROJECT_ROOT}/include/controller"
+    "${MAIN_PROJECT_ROOT}/include/game_engine"
+    "${MAIN_PROJECT_ROOT}/include/event_bus"
 )
 
 target_compile_definitions(kungfu_server PRIVATE
