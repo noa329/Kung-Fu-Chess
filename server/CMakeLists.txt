@@ -68,9 +68,21 @@ file(GLOB ENGINE_SOURCES
     "${MAIN_PROJECT_ROOT}/src/game_engine/*.cpp"
 )
 
+# server/'s own pure-logic layer (parser, serializer, session logic - not
+# the WS/asio glue in main.cpp). Also dual-compiled into run_tests.exe via
+# the Makefile's plain src/*/*.cpp wildcard, so it gets doctest coverage;
+# nothing here touches websocketpp/Asio, so that's safe. Once a
+# src/server/*.cpp file *does* need websocketpp/Asio directly (the future
+# WebSocketServer.cpp, Task A5), it'll need excluding from the Makefile
+# side (mirroring OPENCV_ONLY_SRC) - not needed yet.
+file(GLOB SERVER_LAYER_SOURCES
+    "${MAIN_PROJECT_ROOT}/src/server/*.cpp"
+)
+
 add_executable(kungfu_server
     main.cpp
     ${ENGINE_SOURCES}
+    ${SERVER_LAYER_SOURCES}
 )
 
 target_include_directories(kungfu_server PRIVATE
@@ -83,6 +95,7 @@ target_include_directories(kungfu_server PRIVATE
     "${MAIN_PROJECT_ROOT}/include/controller"
     "${MAIN_PROJECT_ROOT}/include/game_engine"
     "${MAIN_PROJECT_ROOT}/include/event_bus"
+    "${MAIN_PROJECT_ROOT}/include/server"
 )
 
 target_compile_definitions(kungfu_server PRIVATE
