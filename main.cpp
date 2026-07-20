@@ -14,7 +14,7 @@ int main() {
     }
 
     GameEngine game;
-    game.loadBoard(boardResult.tokens);
+    game.startGame(boardResult.tokens);
 
     TextTestRunner runner(game);
     runner.run(std::cin, std::cout);

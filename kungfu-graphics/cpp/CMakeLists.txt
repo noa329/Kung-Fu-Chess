@@ -52,6 +52,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     "${MAIN_PROJECT_ROOT}/include/controller"
     "${MAIN_PROJECT_ROOT}/include/game_engine"
     "${MAIN_PROJECT_ROOT}/include/audio"
+    "${MAIN_PROJECT_ROOT}/include/event_bus"
     "${MAIN_PROJECT_ROOT}/third_party/miniaudio"
 )
 

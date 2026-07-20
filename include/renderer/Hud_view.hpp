@@ -21,6 +21,17 @@ public:
     /** Route a mouse-wheel event here (from main's onMouse) to scroll a move-log panel. */
     void handleScroll(int mouseX, int mouseY, int wheelDelta);
 
+    /**
+     * Hook for the composition root's onGameLifecycle("end", ...) subscriber
+     * (main.cpp) - HudView has no event_bus dependency itself, it's just
+     * handed the result string directly. Currently an inert stub: it only
+     * records that the event fired. compose() still draws the game-over
+     * banner purely from GameSnapshot::gameOver/result, unchanged - wiring
+     * an actual one-shot animation (e.g. a fade-in) into compose() is
+     * follow-up work, not part of this pass.
+     */
+    void playEndAnimation(const std::string& result);
+
     /** Pixel offset of the board frame within the composed canvas - main.cpp
      *  needs this to translate raw window clicks back to board-local pixels. */
     int boardOriginX() const { return LEFT_PANEL_W + RANK_GUTTER_W; }
@@ -38,6 +49,10 @@ private:
 
     int blackScrollOffset_ = 0;
     int whiteScrollOffset_ = 0;
+
+    // Set by playEndAnimation() - not read anywhere yet (see its doc comment).
+    bool endAnimationTriggered_ = false;
+    std::string endAnimationResult_;
 
     // Cached from the last compose() call so handleScroll (fired from the
     // mouse callback, between frames) knows panel bounds/row counts without

@@ -147,6 +147,11 @@ Img HudView::compose(const Img& boardFrame, const GameSnapshot& snap) {
     return canvas;
 }
 
+void HudView::playEndAnimation(const std::string& result) {
+    endAnimationTriggered_ = true;
+    endAnimationResult_ = result;
+}
+
 void HudView::handleScroll(int mouseX, int mouseY, int wheelDelta) {
     (void)mouseY;
     if (wheelDelta == 0) return;

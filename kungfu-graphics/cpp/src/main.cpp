@@ -87,7 +87,7 @@ int main() {
         }
 
         GameEngine engine;
-        engine.loadBoard(standardStartingPosition());
+        engine.startGame(standardStartingPosition());
 
         // Real long_rest/short_rest durations derived from PIECE_SET's own
         // sprite config, replacing RealTimeArbiter's hardcoded 800/500ms
@@ -108,6 +108,18 @@ int main() {
 
         SoundManager::instance().setSoundsRoot(SOUNDS_ROOT);
         SoundManager::instance().playMusic(MUSIC_RELATIVE_PATH, MUSIC_VOLUME);
+
+        // EventBus wiring: GameEngine publishes without knowing who's
+        // listening; this composition root is the only place that connects
+        // its events to concrete subscribers (SoundManager, HudView).
+        engine.events().onSound.subscribe([](const SoundEvent& e) {
+            SoundManager::instance().playSound(e.name + ".wav");
+        });
+        engine.events().onGameLifecycle.subscribe([&hud](const GameLifecycleEvent& e) {
+            if (e.phase == "end") {
+                hud.playEndAnimation(e.result);
+            }
+        });
 
         const std::string window_name = "KungFu Chess";
         Img::on_mouse(window_name, &onMouse, &mouseCtx);
