@@ -3,6 +3,7 @@
 #include "Board.hpp"
 #include "Position.hpp"
 #include "RealTimeArbiter.hpp"
+#include "EventBus.hpp"
 #include <vector>
 #include <string>
 #include <memory>
@@ -58,6 +59,7 @@ class GameEngine {
     long long clock_ = 0;
     std::vector<MoveRecord> moveHistory_;
     std::vector<ActiveCapture> activeCaptures_;
+    EventBus events_;
 
     static const long long CAPTURE_EFFECT_MS = 400;
 
@@ -69,9 +71,20 @@ public:
     GameEngine() : arbiter(board) {}
 
     void loadBoard(const std::vector<std::vector<std::string>>& grid) { board.setGrid(grid); }
+    // Wraps loadBoard() and fires onGameLifecycle({"start", ""}) - the entry
+    // point composition roots (main.cpp) should call to begin a real game
+    // session, as opposed to loadBoard() alone (used freely by tests, which
+    // don't care about the lifecycle event).
+    void startGame(const std::vector<std::vector<std::string>>& grid);
     void select(const Position& pos);
     void jump(const Position& pos);
     void wait(int ms);
+
+    // Each GameEngine owns its own EventBus, so every game session gets an
+    // isolated event stream (no cross-talk between concurrent games once the
+    // server layer exists). Subscribers (SoundManager glue, UI hooks) call
+    // engine.events().onX.subscribe(...) from the composition root.
+    EventBus& events() { return events_; }
 
     void setPlayerNames(const std::string& whiteName, const std::string& blackName);
     void setRestDurations(long long longRestMs, long long shortRestMs);

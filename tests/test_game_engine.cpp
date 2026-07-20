@@ -258,3 +258,98 @@ TEST_CASE("a captured king's flash is reported with wasKing set") {
     REQUIRE(snap.captureFlashes.size() == 1);
     CHECK(snap.captureFlashes[0].wasKing == true);
 }
+
+// event_bus wiring: GameEngine owns its EventBus and publishes discrete
+// "this just happened" events alongside (not instead of) the snapshot -
+// these tests check the events fire, not that they replace snapshot reads.
+
+TEST_CASE("startGame loads the board and fires a game-start lifecycle event") {
+    GameEngine engine;
+    std::vector<GameLifecycleEvent> received;
+    engine.events().onGameLifecycle.subscribe(
+        [&received](const GameLifecycleEvent& e) { received.push_back(e); });
+
+    engine.startGame({{"wK", ".", "."}});
+
+    REQUIRE(received.size() == 1);
+    CHECK(received[0].phase == "start");
+    CHECK(engine.snapshot().boardTokens == std::vector<std::vector<std::string>>{{"wK", ".", "."}});
+}
+
+TEST_CASE("plain loadBoard does not fire a game-start lifecycle event") {
+    GameEngine engine;
+    int callCount = 0;
+    engine.events().onGameLifecycle.subscribe([&callCount](const GameLifecycleEvent&) { ++callCount; });
+
+    engine.loadBoard({{"wK", ".", "."}});
+
+    CHECK(callCount == 0);
+}
+
+TEST_CASE("select-then-move to an empty cell fires a move sound and a move-logged event") {
+    GameEngine engine;
+    engine.loadBoard({{"wR", ".", "."}});
+    std::vector<std::string> sounds;
+    std::vector<std::string> notations;
+    engine.events().onSound.subscribe([&sounds](const SoundEvent& e) { sounds.push_back(e.name); });
+    engine.events().onMoveLogged.subscribe(
+        [&notations](const MoveLoggedEvent& e) { notations.push_back(e.notation); });
+
+    engine.select({0, 0});
+    engine.select({0, 2});
+
+    CHECK(sounds == std::vector<std::string>{"move"});
+    REQUIRE(notations.size() == 1);
+    CHECK(notations[0] == "a1c1"); // single-row board: rowCount - row == 1 for both squares
+}
+
+TEST_CASE("jump fires a jump sound and a move-logged event") {
+    GameEngine engine;
+    engine.loadBoard({{"wR", ".", "."}});
+    std::vector<std::string> sounds;
+    int moveLoggedCount = 0;
+    engine.events().onSound.subscribe([&sounds](const SoundEvent& e) { sounds.push_back(e.name); });
+    engine.events().onMoveLogged.subscribe([&moveLoggedCount](const MoveLoggedEvent&) { ++moveLoggedCount; });
+
+    engine.jump({0, 0});
+
+    CHECK(sounds == std::vector<std::string>{"jump"});
+    CHECK(moveLoggedCount == 1);
+}
+
+TEST_CASE("a resolved capture fires a capture sound and a score-updated event for the capturing side") {
+    GameEngine engine;
+    engine.loadBoard({{"wR", "bN", "."}});
+    std::vector<std::string> sounds;
+    std::vector<ScoreUpdatedEvent> scoreEvents;
+    engine.events().onSound.subscribe([&sounds](const SoundEvent& e) { sounds.push_back(e.name); });
+    engine.events().onScoreUpdated.subscribe(
+        [&scoreEvents](const ScoreUpdatedEvent& e) { scoreEvents.push_back(e); });
+
+    engine.select({0, 0});
+    engine.select({0, 1});
+    engine.wait(1000); // resolve the capture
+
+    // "move" fires immediately on scheduling, "capture" fires once the piece arrives.
+    CHECK(sounds == std::vector<std::string>{"move", "capture"});
+    REQUIRE(scoreEvents.size() == 1);
+    CHECK(scoreEvents[0].color == 'w'); // white captured black's knight (value 3)
+    CHECK(scoreEvents[0].delta == 3);
+    CHECK(scoreEvents[0].newScore == 3);
+}
+
+TEST_CASE("a king capture fires a game-end lifecycle event with the winner") {
+    GameEngine engine;
+    engine.loadBoard({{"wR", "bK"}});
+    std::vector<GameLifecycleEvent> received;
+    engine.events().onGameLifecycle.subscribe(
+        [&received](const GameLifecycleEvent& e) { received.push_back(e); });
+
+    engine.select({0, 0});
+    engine.select({0, 1});
+    engine.wait(1000);
+
+    REQUIRE(received.size() == 1);
+    CHECK(received[0].phase == "end");
+    CHECK(received[0].result == "White Wins");
+}

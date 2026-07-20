@@ -1,7 +1,6 @@
 #include "GameEngine.hpp"
 #include "Pieces.hpp"
 #include "RuleEngine.hpp"
-#include "SoundManager.hpp"
 #include <algorithm>
 #include <cstdlib>
 
@@ -30,11 +29,19 @@ void GameEngine::applyCaptureEvents(const std::vector<CaptureEvent>& events) {
         if (e.wasKing) {
             gameOver = true;
             winnerColor_ = (e.capturedColor == 'w') ? 'b' : 'w';
+            std::string result = (winnerColor_ == 'w') ? "White Wins" : "Black Wins";
+            events_.onGameLifecycle.publish({"end", result});
         }
         int value = pieceValue(e.capturedKind);
-        if (e.capturedColor == 'w') blackScore_ += value; else whiteScore_ += value;
+        if (e.capturedColor == 'w') {
+            blackScore_ += value;
+            events_.onScoreUpdated.publish({'b', blackScore_, value});
+        } else {
+            whiteScore_ += value;
+            events_.onScoreUpdated.publish({'w', whiteScore_, value});
+        }
         activeCaptures_.push_back({e.at, e.capturedColor, e.wasKing, clock_, clock_ + CAPTURE_EFFECT_MS});
-        SoundManager::instance().playCaptureSound();
+        events_.onSound.publish({"capture"});
     }
 }
 
@@ -46,6 +53,11 @@ void GameEngine::pruneCaptureFlashes() {
             ++it;
         }
     }
+}
+
+void GameEngine::startGame(const std::vector<std::vector<std::string>>& grid) {
+    loadBoard(grid);
+    events_.onGameLifecycle.publish({"start", ""});
 }
 
 void GameEngine::setPlayerNames(const std::string& whiteName, const std::string& blackName) {
@@ -84,9 +96,11 @@ void GameEngine::jump(const Position& pos) {
     if (arbiter.isResting(pos)) return;
 
     arbiter.scheduleJump(pos, piece);
-    moveHistory_.push_back({clock_, piece->getColor(), squareName(pos, board.getRowCount())});
+    MoveRecord rec{clock_, piece->getColor(), squareName(pos, board.getRowCount())};
+    moveHistory_.push_back(rec);
     selected = {-1, -1};
-    SoundManager::instance().playJumpSound();
+    events_.onSound.publish({"jump"});
+    events_.onMoveLogged.publish({rec.atMs, rec.color, rec.notation});
 }
 
 void GameEngine::select(const Position& pos) {
@@ -110,23 +124,27 @@ void GameEngine::select(const Position& pos) {
         }
         if (isMovementLegal(selectedPiece, selected, pos, /*isCapture=*/true)) {
             arbiter.scheduleMove(selected, pos, selectedPiece, /*isCapture=*/true);
-            moveHistory_.push_back({clock_, selectedPiece->getColor(),
-                squareName(selected, board.getRowCount()) + squareName(pos, board.getRowCount())});
+            MoveRecord rec{clock_, selectedPiece->getColor(),
+                squareName(selected, board.getRowCount()) + squareName(pos, board.getRowCount())};
+            moveHistory_.push_back(rec);
             selected = {-1, -1};
             // The capture sound itself plays later, from applyCaptureEvents(),
             // once the piece actually arrives and the capture resolves - this
             // is the travel-time "the piece just set off" sound.
-            SoundManager::instance().playMoveSound();
+            events_.onSound.publish({"move"});
+            events_.onMoveLogged.publish({rec.atMs, rec.color, rec.notation});
         }
         return;
     }
 
     if (isMovementLegal(selectedPiece, selected, pos, /*isCapture=*/false)) {
         arbiter.scheduleMove(selected, pos, selectedPiece, /*isCapture=*/false);
-        moveHistory_.push_back({clock_, selectedPiece->getColor(),
-            squareName(selected, board.getRowCount()) + squareName(pos, board.getRowCount())});
+        MoveRecord rec{clock_, selectedPiece->getColor(),
+            squareName(selected, board.getRowCount()) + squareName(pos, board.getRowCount())};
+        moveHistory_.push_back(rec);
         selected = {-1, -1};
-        SoundManager::instance().playMoveSound();
+        events_.onSound.publish({"move"});
+        events_.onMoveLogged.publish({rec.atMs, rec.color, rec.notation});
     }
 }
 
