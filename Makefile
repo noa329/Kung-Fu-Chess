@@ -16,13 +16,19 @@ SOURCES = $(filter-out $(OPENCV_ONLY_SRC),$(ALL_SRC)) $(wildcard tests/*.cpp)
 # נתיבי ה-include - כל תת-תיקייה בנפרד, כי ה-#include-ים בקוד
 # משתמשים בשמות קבצים בלבד (לא נתיב מלא). זה בכוונה, כדי שהקוד
 # יתקמפל גם במערכות שמשטחות קבצים (כמו VPL) וגם מקומית.
-INCLUDE_DIRS := $(shell find include -type d) $(shell find src -type d)
+INCLUDE_DIRS := $(shell find include -type d) $(shell find src -type d) third_party/miniaudio
 INCLUDES = $(addprefix -I,$(INCLUDE_DIRS))
+
+# miniaudio (used by src/audio/SoundManager.cpp, pulled in via GameEngine)
+# calls into COM directly on its WASAPI backend, so it needs ole32 linked in
+# even for this text-protocol/tests build - see kungfu-graphics/cpp/CMakeLists.txt
+# for the same requirement on the graphics build.
+LDLIBS = -lole32
 
 all: $(TARGET)
 
 $(TARGET): $(SOURCES)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $(TARGET) $(SOURCES)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $(TARGET) $(SOURCES) $(LDLIBS)
 
 # ניקוי הבלגן
 clean:

@@ -4,6 +4,7 @@
 #include "GameEngine.hpp"
 #include "Controller.hpp"
 #include "RestDurationLoader.hpp"
+#include "SoundManager.hpp"
 #include <iostream>
 #include <opencv2/opencv.hpp>
 
@@ -18,6 +19,21 @@
 #endif
 static const std::string ASSETS_ROOT = KUNGFU_ASSETS_ROOT;
 static const std::string PIECE_SET = "pieces2";
+
+// Set by CMake to an absolute path to the repo-root assets/sounds folder -
+// see target_compile_definitions in kungfu-graphics/cpp/CMakeLists.txt. Same
+// "make it work regardless of launch directory" reasoning as ASSETS_ROOT above.
+#ifndef KUNGFU_SOUNDS_ROOT
+#define KUNGFU_SOUNDS_ROOT "../../assets/sounds"
+#endif
+static const std::string SOUNDS_ROOT = KUNGFU_SOUNDS_ROOT;
+
+// move.wav/capture.wav are real placeholder recordings already supplied;
+// jump.wav and this music file are synthesized placeholders (no MP3 encoder
+// was available to produce a real background_music.mp3 - swap this file for
+// a real one whenever, .wav and .mp3 both decode fine through SoundManager).
+static const std::string MUSIC_RELATIVE_PATH = "background_music.wav";
+static const float MUSIC_VOLUME = 0.5f;
 
 namespace {
 
@@ -90,6 +106,9 @@ int main() {
         HudView hud;
         MouseContext mouseCtx{&controller, &hud};
 
+        SoundManager::instance().setSoundsRoot(SOUNDS_ROOT);
+        SoundManager::instance().playMusic(MUSIC_RELATIVE_PATH, MUSIC_VOLUME);
+
         const std::string window_name = "KungFu Chess";
         Img::on_mouse(window_name, &onMouse, &mouseCtx);
 
@@ -97,7 +116,7 @@ int main() {
         const double tick_freq = cv::getTickFrequency();
 
         std::cout << "Left-click a piece, then left-click a destination square to move it." << std::endl;
-        std::cout << "Right-click a piece to make it jump. Press ESC to quit." << std::endl;
+        std::cout << "Right-click a piece to make it jump. Press 'M' to mute/unmute sound. Press ESC to quit." << std::endl;
 
         while (true) {
             int64 now = cv::getTickCount();
@@ -115,6 +134,13 @@ int main() {
             int key = frame.show_frame(window_name, 16); // ~60 FPS poll
             if (key == 27) { // ESC
                 break;
+            } else if (key == 'm' || key == 'M') {
+                SoundManager::instance().toggleEnabled();
+                if (SoundManager::instance().isEnabled()) {
+                    SoundManager::instance().playMusic(MUSIC_RELATIVE_PATH, MUSIC_VOLUME);
+                } else {
+                    SoundManager::instance().stopMusic();
+                }
             }
         }
 

@@ -17,8 +17,14 @@ find include -name "*.hpp" -exec cp {} "$OUT_DIR"/ \;
 find src -name "*.cpp" -exec cp {} "$OUT_DIR"/ \;
 cp main.cpp "$OUT_DIR"/
 
+# third_party/miniaudio/miniaudio.h: pulled in bare (#include "miniaudio.h")
+# by src/audio/SoundManager.cpp, same flat-directory/bare-filename convention
+# as everything else here - it isn't under include/ so the *.hpp glob above
+# doesn't catch it (also .h, not .hpp).
+cp third_party/miniaudio/miniaudio.h "$OUT_DIR"/
+
 count=$(ls "$OUT_DIR" | wc -l)
 echo "Packaged $count files into $OUT_DIR (VPL limit: 70)"
 
-(cd "$OUT_DIR" && zip -q "../$ZIP_NAME" *.hpp *.cpp)
+(cd "$OUT_DIR" && zip -q "../$ZIP_NAME" *.hpp *.cpp *.h)
 echo "Created $ZIP_NAME - upload this to VPL"

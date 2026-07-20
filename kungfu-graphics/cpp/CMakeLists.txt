@@ -27,6 +27,7 @@ file(GLOB ENGINE_SOURCES
     "${MAIN_PROJECT_ROOT}/src/rule_engine/*.cpp"
     "${MAIN_PROJECT_ROOT}/src/controller/*.cpp"
     "${MAIN_PROJECT_ROOT}/src/game_engine/*.cpp"
+    "${MAIN_PROJECT_ROOT}/src/audio/*.cpp"
 )
 
 set(SOURCES ${LOCAL_SOURCES} ${RENDERER_SOURCES} ${ENGINE_SOURCES})
@@ -50,15 +51,24 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     "${MAIN_PROJECT_ROOT}/include/rule_engine"
     "${MAIN_PROJECT_ROOT}/include/controller"
     "${MAIN_PROJECT_ROOT}/include/game_engine"
+    "${MAIN_PROJECT_ROOT}/include/audio"
+    "${MAIN_PROJECT_ROOT}/third_party/miniaudio"
 )
 
 target_link_directories(${PROJECT_NAME} PRIVATE ${OPENCV_LIB_DIR})
-target_link_libraries(${PROJECT_NAME} 
+target_link_libraries(${PROJECT_NAME}
     $<$<CONFIG:Debug>:${OPENCV_LIB_DIR}/opencv_world451d.lib>
     $<$<CONFIG:Release>:${OPENCV_LIB_DIR}/opencv_world451.lib>
     $<$<CONFIG:RelWithDebInfo>:${OPENCV_LIB_DIR}/opencv_world451.lib>
     $<$<CONFIG:MinSizeRel>:${OPENCV_LIB_DIR}/opencv_world451.lib>
 )
+
+# miniaudio (WASAPI backend) calls into COM (CoInitializeEx/PropVariantClear)
+# directly rather than dynamically loading it like most other Windows APIs it
+# uses, so it needs to be linked against explicitly.
+if(WIN32)
+    target_link_libraries(${PROJECT_NAME} ole32)
+endif()
 
 if(WIN32)
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
@@ -70,10 +80,12 @@ if(WIN32)
         $<TARGET_FILE_DIR:${PROJECT_NAME}>)
 endif()
 
-# Absolute path to kungfu-graphics/ as a #define, so main.cpp doesn't have to
-# guess the working directory it's launched from (see main.cpp).
+# Absolute path to kungfu-graphics/ and to the repo-root assets/sounds/
+# folder, as #defines, so main.cpp doesn't have to guess the working
+# directory it's launched from (see main.cpp).
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     KUNGFU_ASSETS_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../"
+    KUNGFU_SOUNDS_ROOT="${MAIN_PROJECT_ROOT}/assets/sounds"
 )
 
 message(STATUS "Found source files: ${SOURCES}")
