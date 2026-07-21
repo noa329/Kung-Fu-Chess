@@ -16,7 +16,7 @@ SOURCES = $(filter-out $(OPENCV_ONLY_SRC),$(ALL_SRC)) $(wildcard tests/*.cpp)
 # נתיבי ה-include - כל תת-תיקייה בנפרד, כי ה-#include-ים בקוד
 # משתמשים בשמות קבצים בלבד (לא נתיב מלא). זה בכוונה, כדי שהקוד
 # יתקמפל גם במערכות שמשטחות קבצים (כמו VPL) וגם מקומית.
-INCLUDE_DIRS := $(shell find include -type d) $(shell find src -type d) third_party/miniaudio
+INCLUDE_DIRS := $(shell find include -type d) $(shell find src -type d) third_party/miniaudio third_party/nlohmann
 INCLUDES = $(addprefix -I,$(INCLUDE_DIRS))
 
 # miniaudio (used by src/audio/SoundManager.cpp, pulled in via GameEngine)

@@ -96,6 +96,7 @@ target_include_directories(kungfu_server PRIVATE
     "${MAIN_PROJECT_ROOT}/include/game_engine"
     "${MAIN_PROJECT_ROOT}/include/event_bus"
     "${MAIN_PROJECT_ROOT}/include/server"
+    "${MAIN_PROJECT_ROOT}/third_party/nlohmann"
 )
 
 target_compile_definitions(kungfu_server PRIVATE
