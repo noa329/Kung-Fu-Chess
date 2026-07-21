@@ -382,7 +382,7 @@ if connections seem stuck at capacity.
 
 | Task | What | Depends on | Tests |
 |---|---|---|---|
-| **C1** | `persistence/Database` — thin SQLite C-API wrapper (open, exec, prepared-statement query helpers). Vendor sqlite3 amalgamation under `third_party/sqlite/` (committed, like `miniaudio/` — needed by both the Makefile build, for doctest coverage, and `server/CMakeLists.txt`, which references this same path rather than fetching its own copy). | — | doctest against an in-memory (`:memory:`) database: create table, insert, query round-trip. |
+| **C1** ✅ | `persistence/Database` (`include/persistence/Database.hpp` + `src/persistence/Database.cpp`) — thin wrapper over the SQLite C API: `exec()` for parameterless statements (DDL like `CREATE TABLE`), `prepare()`/`Statement` (move-only, RAII-finalized) for anything with a bound value - untrusted data (a username, a password hash) must go through bound parameters, never string-concatenated into `exec()`. Vendored `sqlite3.c`/`.h` (version 3.53.3, official amalgamation from sqlite.org, SHA3-256-verified against the published checksum before extracting) under `third_party/sqlite/` (committed, like `miniaudio/`), per the already-confirmed plan. **Real build-system finding, not anticipated by the original plan text:** `sqlite3.c` is genuine C, not C++ - it relies pervasively on implicit `void*`-to-`T*` conversions (`sqlite3DbMallocRaw()` etc.), legal in C but a hard error under C++'s stricter conversion rules. Compiling it via `g++` (as every other `SOURCES` entry is) failed with dozens of "invalid conversion from 'void\*'" errors, confirmed by a real build attempt. Fixed two ways: **(1)** the Makefile now compiles `third_party/sqlite/sqlite3.o` via a dedicated `gcc`/`-std=c11` rule and links that object into the final `g++` link step, instead of listing `sqlite3.c` in `SOURCES` directly; **(2)** `server/CMakeLists.txt`'s `project(...)` call gained `C` alongside `CXX` - with only `CXX` enabled, CMake had no C compiler configured and silently *dropped* `sqlite3.c` from the build entirely (no error, just missing from both the ninja steps and the final link line) rather than failing loudly, which was the more confusing half of this to track down. Both fixes are the standard, sqlite.org-documented way to embed the amalgamation in a C++ project, not repo-specific workarounds. `third_party/README.md` updated (also backfilled a missing `nlohmann/` entry in the "vendored and committed" list while touching that file). | — | 6 doctest cases against `:memory:` databases: create table + insert + query round-trip, a query with no matching rows, multi-row iteration order, a null column via `isNull()`, and `exec`/`prepare` both throwing `std::runtime_error` on malformed SQL. `run_tests.exe` 130/130 (was 124, +6 new). Manual: `kungfu_server.exe` still builds and starts/listens cleanly via CMake/Ninja with `persistence`/`sqlite3.c` now linked in (not yet wired into any request path - that's `UserRepository`/C2's job). |
 | **C2** | `persistence/UserRepository` — users table CRUD + rating read/update. Vendor the chosen SHA-256 implementation (open question below), add salt-generation + hash-and-compare helpers. | C1 | doctest: create user, find by username, wrong password rejected, rating update persists. All against `:memory:`. |
 | **C3** | `server/AuthService` — login/register message schema and handling, wired into `GameSession`'s join flow in place of B2's username-only assignment. | C2, B2 | doctest for the auth *decision* logic (given a stored user + a login attempt, accept/reject) decoupled from the socket layer. Manual: full login round-trip via `client/cli`. |
 | **C4** | Wire `client/cli`'s login prompt to ask for username **and** password; handle the reject/accept responses. **Open question below:** auto-register on first-ever username, or explicit separate register vs. login commands? | C3, B3 | Manual. |
@@ -426,18 +426,14 @@ these belong to later phases):
    **Resolved: excluded.** Same render-loop-only category as
    `moveProgress`/`moveTargets`; revisit only if/when the graphics binary
    gets network support (separate, unscoped future task).
-3. **C2 — which specific SHA-256 implementation to vendor?** "A small
-   single-header public-domain SHA-256" is a category, not a pinned
-   source — I'll need you to either name one or approve me picking a
-   specific well-known one (e.g. Brad Conte's `sha256.h`/.c, public domain)
-   when C2 starts.
-4. **C4 — auto-register vs. explicit register/login.** Does a
-   never-seen-before username on the login screen get silently created
-   (auto-register), or does the deck imply separate explicit "register"
-   and "login" actions?
-5. **C5 — ELO K-factor.** Deck doesn't specify one. Common defaults are
-   16–32; I'd default to 32 (standard for less-established/casual play)
-   unless you want a specific value.
+3. ~~**C2 — which specific SHA-256 implementation to vendor?**~~
+   **Resolved:** Brad Conte's `sha256.h`/`.c` (public domain), as
+   originally suggested. Vendor when C2 starts.
+4. ~~**C4 — auto-register vs. explicit register/login.**~~ **Resolved:
+   auto-register** — a never-seen-before username on the single login
+   screen gets created automatically; the deck only describes one login
+   screen, no separate register flow.
+5. ~~**C5 — ELO K-factor.**~~ **Resolved: 32.**
 6. **D4 — is mid-game reconnect supported at all** within the 20s
    auto-resign countdown, or is it strictly one-way (disconnect starts the
    clock, nothing stops it short of the game already having ended)?

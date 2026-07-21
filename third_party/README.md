@@ -3,6 +3,21 @@
 ## Vendored and committed to git
 
 - **`miniaudio/`** — single-header audio library, used by `src/audio/SoundManager.cpp`.
+- **`nlohmann/`** — single-header JSON library, used by `GameStateSerializer`
+  (Task A4) and the server's wire protocol generally. Landed here instead
+  of via `FetchContent` for the same dual-compilation reason as `sqlite/`
+  below.
+- **`sqlite/`** — `sqlite3.c` + `sqlite3.h`, the public-domain SQLite
+  amalgamation (version 3.53.3, `sqlite-amalgamation-3530300.zip` from
+  sqlite.org, SHA3-256 `d45c688a8cb23f68611a894a756a12d7eb6ab6e9e2468ca70adbeab3808b5ab9`
+  - verified against the published checksum on sqlite.org's download page
+  before extracting). Used by `persistence/Database` (Task C1). `shell.c`
+  (the `sqlite3` CLI tool) and `sqlite3ext.h` (loadable-extension support)
+  are part of the same zip but aren't needed for a C-API wrapper, so
+  they're left out. Same dual-compilation reasoning as `nlohmann::json`
+  below: `UserRepository`'s doctest coverage runs under the plain
+  Makefile/`run_tests.exe` build, which `FetchContent` can't reach, so
+  this has to be a real committed file, not a CMake-fetched one.
 
 ## Fetched via CMake FetchContent (server build only)
 
@@ -52,16 +67,16 @@ eventually be removed entirely; if that day comes, whatever replaces it
 needs to preserve the same "fetch source, don't add_subdirectory"
 behavior for exactly the Boost/tests reason above.
 
-**`nlohmann::json` and the sqlite amalgamation are a different case, and
-will land in the "vendored and committed" section above, not here**, when
-the tasks that need them start (`GameStateSerializer`/A4, `persistence/`/C1)
-— see `docs/tasks/server-phase-plan.md`. Reason: those are *dual-compiled*
-pure-logic pieces that need doctest coverage under the existing
-Makefile/`run_tests.exe` flow, which has no `FetchContent` equivalent —
-`FetchContent` only populates content inside `server/build/`, invisible
-to the Makefile build. `websocketpp`/Asio avoid that problem because
-they're only ever touched by `server/main.cpp`'s accept loop, which is
-CMake-only and never dual-compiled.
+**`nlohmann::json` and the sqlite amalgamation are a different case** —
+both landed in the "vendored and committed" section above (`GameStateSerializer`/
+A4, `persistence/`/C1 — see `docs/tasks/server-phase-plan.md`), not here,
+even though both are also referenced by `server/CMakeLists.txt`. Reason:
+those are *dual-compiled* pure-logic pieces that need doctest coverage
+under the existing Makefile/`run_tests.exe` flow, which has no
+`FetchContent` equivalent — `FetchContent` only populates content inside
+`server/build/`, invisible to the Makefile build. `websocketpp`/Asio avoid
+that problem because they're only ever touched by `server/main.cpp`'s
+accept loop, which is CMake-only and never dual-compiled.
 
 ## History
 

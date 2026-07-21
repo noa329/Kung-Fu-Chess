@@ -1,5 +1,13 @@
 cmake_minimum_required(VERSION 3.24)
-project(KungFuChessServer CXX)
+# Task C1: C enabled alongside CXX specifically for third_party/sqlite/
+# sqlite3.c. With only CXX enabled, CMake has no configured C compiler and
+# silently drops .c sources from the build entirely (confirmed by a real
+# build - sqlite3.c never appeared in the ninja steps or the final link
+# line) rather than erroring, which is a much more confusing failure mode
+# than the fix. sqlite3.c genuinely needs a real C compiler, not g++ in
+# C++ mode - see the matching comment in the Makefile for why (implicit
+# void*-to-T* conversions that are legal C but not legal C++).
+project(KungFuChessServer CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -86,11 +94,23 @@ file(GLOB LOGGING_SOURCES
     "${MAIN_PROJECT_ROOT}/src/logging/*.cpp"
 )
 
+# persistence/ (Task C1) - Database wrapper, dual-compiled same as
+# server/'s own layer above; no websocketpp/Asio dependency either.
+file(GLOB PERSISTENCE_SOURCES
+    "${MAIN_PROJECT_ROOT}/src/persistence/*.cpp"
+)
+
 add_executable(kungfu_server
     main.cpp
     ${ENGINE_SOURCES}
     ${SERVER_LAYER_SOURCES}
     ${LOGGING_SOURCES}
+    ${PERSISTENCE_SOURCES}
+    # sqlite3.c: vendored C amalgamation (third_party/sqlite, see
+    # third_party/README.md), needed by persistence/Database.cpp. Compiled
+    # as C via CMake's automatic per-file language detection (.c vs .cpp),
+    # same as any other .c source added to a CXX-language target.
+    "${MAIN_PROJECT_ROOT}/third_party/sqlite/sqlite3.c"
 )
 
 target_include_directories(kungfu_server PRIVATE
@@ -105,7 +125,9 @@ target_include_directories(kungfu_server PRIVATE
     "${MAIN_PROJECT_ROOT}/include/event_bus"
     "${MAIN_PROJECT_ROOT}/include/server"
     "${MAIN_PROJECT_ROOT}/include/logging"
+    "${MAIN_PROJECT_ROOT}/include/persistence"
     "${MAIN_PROJECT_ROOT}/third_party/nlohmann"
+    "${MAIN_PROJECT_ROOT}/third_party/sqlite"
 )
 
 target_compile_definitions(kungfu_server PRIVATE
