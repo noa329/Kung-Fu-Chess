@@ -137,6 +137,8 @@ add_executable(kungfu_client
 target_include_directories(kungfu_client PRIVATE
     ${asio_SOURCE_DIR}/asio/include
     ${websocketpp_SOURCE_DIR}
+    # Task B3: client sends/parses join-protocol JSON now too.
+    "${MAIN_PROJECT_ROOT}/third_party/nlohmann"
 )
 
 target_compile_definitions(kungfu_client PRIVATE
