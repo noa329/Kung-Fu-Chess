@@ -141,9 +141,13 @@ void WebSocketServer::onMessage(websocketpp::connection_hdl hdl, server_t::messa
         // \r (invisible on a terminal, since it just returns the cursor to
         // column 0) reads as "the same 6 characters I typed" while actually
         // being 7 bytes, which is exactly the kind of malformed command this
-        // needs to make visible.
-        std::cout << "malformed command: \"" << escapeForLog(payload) << "\" ("
-                   << payload.size() << " bytes) (" << parsed.error << ")" << std::endl;
+        // needs to make visible. Routed through logger_ (not std::cout
+        // directly) so it lands in server.log too, not just the console -
+        // cheap insurance for diagnosing any future report of a truncated/
+        // malformed command arriving server-side, without needing a repro
+        // captured live.
+        logger_.log("malformed command: \"" + escapeForLog(payload) + "\" ("
+                     + std::to_string(payload.size()) + " bytes) (" + parsed.error + ")");
     }
     broadcastState();
 }
