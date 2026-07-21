@@ -253,7 +253,106 @@ OpenCV rendering).
 | **A2** ✅ | `GameCommandParser` (`include/server/GameCommandParser.hpp` + `src/server/GameCommandParser.cpp`) — pure parser, dual-compiled (Makefile + `server/CMakeLists.txt`, no `websocketpp`/Asio dependency). Full grammar decided and documented as a design-decision comment in the header: `"WQe2e5"` (`<Color><Piece><From><To>`) for moves, `"JWPe2"` (`J<Color><Piece><Square>`) for jumps — confirmed `J`-prefix convention. Casing is strict (uppercase color/piece/`J`, lowercase file letter) - a deliberate simplicity choice. Squares assume a fixed 8×8 board (wire commands only ever address a real game, unlike `GameEngine`'s own variable-size-board tests). Error taxonomy mirrors `BoardParser`'s `"ERROR <REASON>"` style: `MALFORMED_COMMAND`, `INVALID_COLOR`, `INVALID_PIECE`, `INVALID_SQUARE`. | — | 14 doctest cases: valid move, valid jump, black-color normalization (both), empty string, too-short/too-long for both move and jump, bad color char, lowercase rejected, bad piece letter, bad origin/destination/jump square. |
 | **A3** ✅ | `GameSession` (`include/server/GameSession.hpp` + `src/server/GameSession.cpp`) — owns one `GameEngine`. `handleCommand(ParsedCommand)` looks up the board cell at `from` via `snapshot()`, validates color **and** piece letter against what's actually there (fail on mismatch: `ERROR NO_PIECE_AT_SQUARE` / `ERROR COLOR_MISMATCH` / `ERROR PIECE_MISMATCH`), then calls `select(from); select(to);` for moves or `jump(from)` for jumps. **Scope boundary worth remembering:** `CommandResult` only ever reports *this* validation failing — shape/path/timing legality (illegal shape, blocked path, resting piece, pending move) stays `GameEngine`'s existing silent-no-op via `select()`/`jump()`, exactly like an illegal click through `Controller` today; there's no way to report those as errors since `GameEngine`'s public API has no return value for them. Dual-compiled, no `websocketpp`/Asio dependency. | A2 | 7 doctest cases against a real `GameEngine` instance: correct move schedules and resolves; correct jump schedules; empty-square/color-mismatch/piece-mismatch/out-of-bounds all rejected *without* mutating engine state (board tokens **and** `selected` checked unchanged); a validation-passed-but-GameEngine-declines case (same-square move) confirmed as `ok == true` with no board change - documents the scope boundary above as an executable test, not just a comment. |
 | **A4** ✅ | `GameStateSerializer` (`include/server/GameStateSerializer.hpp` + `src/server/GameStateSerializer.cpp`) — `GameSnapshot` subset → JSON via `nlohmann::json`: `board`, `cellStates`, `whiteScore`/`blackScore`, `whiteMoves`/`blackMoves` (each `{atMs, color, notation}`), `gameOver`/`result`. **`captureFlashes` confirmed excluded** — same render-loop-only category as `moveProgress`/`moveTargets`/`selected`; the text-only shell client has nothing to show a flash with. `nlohmann::json` vendored under `third_party/nlohmann/` (dual-compiled, needed by both `run_tests.exe` and `kungfu_server`, per the earlier dual-compilation reasoning — Makefile `INCLUDE_DIRS` and `server/CMakeLists.txt` both updated). The `char` color field needs an explicit `std::string(1, ...)` conversion or `nlohmann::json` serializes it as an integer, not `"w"`/`"b"` — a real gotcha, not hypothetical, caught by a dedicated test. | A2 (shares the vendoring pattern, no functional dependency) | 6 doctest cases: board/cellStates round-trip exactly, both scores, move history shape (`atMs`/`color`/`notation` per entry), `gameOver=false` mid-game, `gameOver=true` with `result` set, and an exact-field-set check (fails if a field is ever silently added or dropped). One iteration needed: `nlohmann::json`'s `{{...}}` initializer-list constructor is ambiguous between "array of 2-element arrays" and "object" and picked object for the board-comparison test — fixed by comparing against `json::parse()` on a string literal instead, not by changing the serializer. |
-| **A5** | Wire it together: `WebSocketServer` + `GameSession` for exactly one hardcoded session, up to 2 connections (3rd rejected outright, per your confirmation). Inbound text message → A2 parse → A3 execute → broadcast. Independent ~16ms `steady_timer` tick → `engine.wait(dt)` → broadcast to both. | A1, A3, A4 | Extract anything logic-only (e.g. "given N active connections, does a new one get accepted or rejected" as a pure function/small class independent of real sockets) into doctest. Everything else: manual procedure via `ws_test_client.py` — two connections, send `"WQe2e5"`, confirm both receive updated state; 3rd connection gets rejected. Document the exact manual steps in this task's commit message or a short companion note. |
+| **A5** ✅ | `WebSocketServer` (`include/server/WebSocketServer.hpp` + `src/server/WebSocketServer.cpp`, the one `src/server/` file that touches `websocketpp`/Asio directly, now excluded from the Makefile via `SERVER_ONLY_SRC`) + `ConnectionRegistry<Handle>` (`include/server/ConnectionRegistry.hpp`, header-only, templated so tests use plain `int`s instead of `websocketpp::connection_hdl`) wire A2→A3→A4 together for real: exactly one hardcoded `GameSession`, up to 2 connections (3rd closed immediately after its handshake completes - websocketpp's `open` handler fires post-handshake, so rejection is "accept then immediately close," not an HTTP-level refusal). Inbound text → A2 parse → A3 execute → A4 serialize → broadcast to every connection. `server/main.cpp` rewritten to actually run `WebSocketServer` (A1's echo handler and standalone linkage-proof are both superseded). | A1, A3, A4 | 4 doctest cases for `ConnectionRegistry` (accept-to-capacity, reject-beyond-capacity, insertion order, zero-capacity). Everything else manual — see verification steps below, and the two real bugs manual testing caught. |
+
+**Two real bugs found and fixed during A5's own manual verification** (not
+hypothetical - both reproduced, root-caused, and fixed before this task
+was considered done):
+
+1. **Server crash on send to a dead connection.** `broadcastState()`
+   iterates every registered connection and calls `server_.send()`;
+   `ConnectionRegistry` has no `remove()` yet (deliberately - real
+   disconnect handling is Task D4's job). When a client process was
+   killed mid-test, the next tick's `send()` to that now-dead handle
+   threw `websocketpp::exception`, uncaught, which called
+   `std::terminate()` and took down the *entire server process* over one
+   dead connection. Fixed with a `try`/`catch` around the per-connection
+   `send()` in `broadcastState()` - it doesn't add cleanup logic (still
+   D4's job), it just stops one dead handle from being able to crash
+   everything else. This is a baseline stability requirement, not
+   something worth deferring to D4 just because D4 owns the *full*
+   disconnect-handling feature.
+2. **Simulated game clock ran at roughly half real-time speed.** The tick
+   handler called `engine().wait(kTickMs)` using the *nominal* 16ms
+   constant every time, but the real timer period measured during
+   testing was closer to ~30ms (Windows timer granularity + asio/
+   websocketpp overhead) - so a "2000ms" pawn move was actually taking
+   ~3.8 real seconds to resolve, which looked exactly like a hung/broken
+   move until root-caused. Fixed by measuring real elapsed time between
+   ticks (`std::chrono::steady_clock`) and feeding *that* into
+   `engine().wait()` instead of the hardcoded constant - the same
+   dt-from-real-elapsed-time pattern the graphics `main.cpp`'s render
+   loop already uses, not a new invention. `kTickMs` now only controls
+   how often the timer fires, not how much simulated time passes per
+   fire.
+
+### Manual verification steps (A5)
+
+Reproduces exactly what automated testing confirmed above. Needs three
+terminals plus the build tools already set up for this repo.
+
+```sh
+# 1. Build the server (MSYS2/ucrt64 toolchain - adjust paths/PATH if your
+#    cmake/ninja/g++ aren't already on PATH)
+cmake -S server -B server/build -G Ninja -DCMAKE_CXX_COMPILER=g++
+cmake --build server/build
+
+# 2. Start it (terminal 1) - leave this running
+./server/build/kungfu_server.exe
+```
+
+```sh
+# 3. Terminal 2 - client A
+python scripts/ws_test_client.py
+```
+```sh
+# 4. Terminal 3 - client B
+python scripts/ws_test_client.py
+```
+
+Both client terminals immediately start printing incoming state
+broadcasts prefixed `< ` - **this streams continuously** (a broadcast on
+every tick, so expect fast, near-continuous scroll in both terminals,
+not a one-shot response). That alone confirms both connections are live
+and receiving state.
+
+In **client A's** terminal, type a move and press Enter:
+```
+WPe2e4
+```
+Within a couple of seconds (2000ms simulated travel time), watch the
+`"board"` field in **both** terminals' incoming stream: rank-2 file-e
+(`board[6][4]`) goes from `"wP"` to `"."`, rank-4 file-e (`board[4][4]`)
+goes from `"."` to `"wP"`. Both clients should show the same resolved
+position at the same time - that's the "both clients see the result"
+requirement.
+
+```sh
+# 5. Terminal 4 (or reuse 2/3 after Ctrl-C) - the 3rd connection
+python scripts/ws_test_client.py
+```
+Expect: `Connected to ws://127.0.0.1:9002/` (the WS handshake itself
+always succeeds - rejection is a close *right after*, not an HTTP-level
+refusal), immediately followed by `[server closed the connection]`. If
+you instead see it sit connected and receiving broadcasts, that's a
+regression - it should never receive a single state message.
+
+```sh
+# 6. Confirm run_tests.exe still builds clean with SERVER_ONLY_SRC excluding
+#    WebSocketServer.cpp (i.e. this build must NOT need websocketpp/Asio at all)
+make
+./run_tests.exe
+```
+Expect a clean build with no `websocketpp`/`asio` include errors, and
+all test cases passing (111 as of this task, more once later tasks add
+their own). If the build ever tries to compile `websocketpp` headers
+here, `SERVER_ONLY_SRC` in the `Makefile` has regressed.
+
+**Known limitation to expect, not a bug:** if you kill a client terminal
+(Ctrl-C) instead of letting the script exit cleanly, the server keeps
+that dead connection's slot occupied - `ConnectionRegistry` has no
+`remove()` yet (Task D4). Restart `kungfu_server.exe` between test runs
+if connections seem stuck at capacity.
 | **A6** | `include/logging/Logger.hpp` (shared utility, file + console sinks) + wire `GameSession` to subscribe it to `onMoveLogged`/`onScoreUpdated`/`onGameLifecycle`/`onSound` for structured server-side game-event logs. This is a slice of deck item 6, pulled forward because it's small and the natural place to plug into the EventBus subscriptions already designed for exactly this. | A5 | doctest: `Logger` formats a line correctly given known inputs (inject a fake sink/stream). Manual: confirm log lines appear during the A5 manual test. |
 
 ### Phase B — Home screen basic (deck item 2)

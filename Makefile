@@ -11,7 +11,12 @@ TARGET = run_tests.exe
 # בנפרד דרך ה-CMake/OpenCV build, ואף בדיקה תחת tests/ לא בודקת אותם.
 ALL_SRC := $(wildcard src/*/*.cpp)
 OPENCV_ONLY_SRC := src/renderer/Board_view.cpp src/renderer/Piece_animator.cpp src/renderer/Sprite_animation.cpp src/renderer/Hud_view.cpp src/renderer/RestDurationLoader.cpp
-SOURCES = $(filter-out $(OPENCV_ONLY_SRC),$(ALL_SRC)) $(wildcard tests/*.cpp)
+# WebSocketServer.cpp needs websocketpp/Asio, which this build has no access
+# to (they're CMake FetchContent-only, see server/CMakeLists.txt and
+# third_party/README.md) - everything else under src/server/ is pure logic
+# with no such dependency, so it stays in SOURCES and gets doctest coverage.
+SERVER_ONLY_SRC := src/server/WebSocketServer.cpp
+SOURCES = $(filter-out $(OPENCV_ONLY_SRC) $(SERVER_ONLY_SRC),$(ALL_SRC)) $(wildcard tests/*.cpp)
 
 # נתיבי ה-include - כל תת-תיקייה בנפרד, כי ה-#include-ים בקוד
 # משתמשים בשמות קבצים בלבד (לא נתיב מלא). זה בכוונה, כדי שהקוד
