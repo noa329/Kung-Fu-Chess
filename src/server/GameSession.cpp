@@ -54,3 +54,17 @@ CommandResult GameSession::handleCommand(const ParsedCommand& cmd) {
     }
     return {true, ""};
 }
+
+JoinResult GameSession::handleJoin(const std::string& username) {
+    if (!whiteJoined_) {
+        whiteJoined_ = true;
+        whiteUsername_ = username;
+        return {true, 'w', false, ""};
+    }
+    if (!blackJoined_) {
+        blackJoined_ = true;
+        blackUsername_ = username;
+        return {true, 'b', true, ""};
+    }
+    return {false, ' ', false, "ERROR SESSION_FULL"};
+}

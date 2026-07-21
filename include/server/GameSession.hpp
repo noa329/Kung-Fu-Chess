@@ -18,6 +18,26 @@ struct CommandResult {
     std::string error; // set only when ok == false, e.g. "ERROR PIECE_MISMATCH"
 };
 
+// Task B2: player-slot color assignment. First successful join gets White,
+// second gets Black. A third join is rejected - structurally unreachable
+// via a real client today (ConnectionRegistry, A5, already caps the
+// session at 2 connections and closes a 3rd right after its handshake,
+// before any message ever reaches here), but handleJoin() stays a safe,
+// defined decision either way rather than relying on that upstream
+// guarantee, same defensive-validation reasoning GameCommandParser's error
+// taxonomy already established. Username-only, no password/identity
+// verification - Task C3's AuthService supersedes this join flow once
+// login/register exists.
+struct JoinResult {
+    bool ok;
+    char color;       // 'w' | 'b', meaningful only when ok == true
+    bool hasOpponent; // true when the other color slot was already filled
+                      // before this join (i.e. this is the 2nd successful
+                      // join) - tells the caller whether an already-connected
+                      // opponent needs notifying
+    std::string error; // set only when ok == false, e.g. "ERROR SESSION_FULL"
+};
+
 // Owns one GameEngine (one concurrent game = one GameSession = one
 // isolated GameEngine + EventBus, per the event_bus design). Turns an
 // already-parsed ParsedCommand (Task A2) into the corresponding
@@ -37,6 +57,10 @@ struct CommandResult {
 class GameSession {
     GameEngine engine_;
     Logger* logger_ = nullptr;
+    bool whiteJoined_ = false;
+    bool blackJoined_ = false;
+    std::string whiteUsername_;
+    std::string blackUsername_;
 
     void logEvent(const std::string& message);
 
@@ -47,5 +71,6 @@ public:
     void attachLogger(Logger& logger) { logger_ = &logger; }
 
     CommandResult handleCommand(const ParsedCommand& cmd);
+    JoinResult handleJoin(const std::string& username);
 };
 #endif

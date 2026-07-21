@@ -10,12 +10,22 @@
 #include <memory>
 #include <chrono>
 #include <fstream>
+#include <map>
 
 // Wires GameCommandParser (A2) + GameSession (A3) + GameStateSerializer
 // (A4) together over a real WebSocket connection: exactly one hardcoded
 // GameSession, up to 2 connections (a 3rd is rejected outright).
 // Generalizing to N concurrent sessions (SessionManager) is Task D1, not
 // here.
+//
+// Task B2: also detects and handles `{"type":"join","username":"..."}`
+// control messages ahead of GameCommandParser's plain-string game-command
+// grammar - see tryHandleJoin(). Wire response shapes (all JSON, this
+// class's own design decision, not specified by the deck beyond the
+// "you are White"/"opponent connected: <name>" wording):
+//   -> joining client on success:  {"type":"joined","color":"white"|"black","username":"..."}
+//   -> joining client on reject:   {"type":"join_rejected","error":"ERROR ..."}
+//   -> existing opponent (if any): {"type":"opponent_joined","username":"..."}
 //
 // This is the one place in server/ that touches websocketpp/Asio
 // directly, so unlike GameCommandParser/GameSession/GameStateSerializer
@@ -63,10 +73,29 @@ private:
     ConnectionRegistry<websocketpp::connection_hdl> registry_;
     std::unique_ptr<asio::steady_timer> tickTimer_;
     std::chrono::steady_clock::time_point lastTickTime_;
+    // Task B2: which color each connection was assigned on join. Populated
+    // by tryHandleJoin(), not onOpen() - color assignment is driven by join
+    // *message* order, not connection-accept order, per GameSession::
+    // handleJoin(). connection_hdl is a std::weak_ptr<void> with no
+    // operator<, so std::owner_less is the standard websocketpp-documented
+    // way to use it as a map key.
+    std::map<websocketpp::connection_hdl, char, std::owner_less<websocketpp::connection_hdl>> hdlToColor_;
 
     void onOpen(websocketpp::connection_hdl hdl);
     void onMessage(websocketpp::connection_hdl hdl, server_t::message_ptr msg);
     void scheduleTick();
     void broadcastState();
+    // Returns true if `payload` was a well-formed join message and has
+    // already been fully handled (color assigned + response(s) sent) - the
+    // caller should not also try to parse it as a game command. Returns
+    // false for anything that isn't a join message, including plain
+    // game-command strings like "WQe2e5" (which aren't valid JSON at all),
+    // so onMessage's existing GameCommandParser path is completely
+    // unaffected.
+    bool tryHandleJoin(websocketpp::connection_hdl hdl, const std::string& payload);
+    // json param is a pre-serialized string, not nlohmann::json - keeps
+    // nlohmann out of this header entirely, same convention
+    // GameStateSerializer.hpp already established.
+    void sendJson(websocketpp::connection_hdl hdl, const std::string& json);
 };
 #endif

@@ -1,11 +1,16 @@
 #include "WebSocketServer.hpp"
 #include "GameCommandParser.hpp"
 #include "GameStateSerializer.hpp"
+#include <nlohmann/json.hpp>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
 
 namespace {
+
+std::string colorName(char color) {
+    return color == 'w' ? "white" : "black";
+}
 
 // Renders non-printable bytes (notably a stray \r from a client whose line
 // reader didn't strip Windows CRLF endings) visibly instead of letting them
@@ -72,8 +77,59 @@ void WebSocketServer::onOpen(websocketpp::connection_hdl hdl) {
     broadcastState();
 }
 
-void WebSocketServer::onMessage(websocketpp::connection_hdl, server_t::message_ptr msg) {
+void WebSocketServer::sendJson(websocketpp::connection_hdl hdl, const std::string& json) {
+    // Same reasoning as broadcastState(): a connection can die between the
+    // moment we decide to send and the actual send() call - an uncaught
+    // websocketpp::exception here would take down the whole process over
+    // one dead handle, same class of bug as the A5 crash.
+    try {
+        server_.send(hdl, json, websocketpp::frame::opcode::text);
+    } catch (const websocketpp::exception&) {
+        // Swallow - see comment above.
+    }
+}
+
+bool WebSocketServer::tryHandleJoin(websocketpp::connection_hdl hdl, const std::string& payload) {
+    nlohmann::json j;
+    try {
+        j = nlohmann::json::parse(payload);
+    } catch (const nlohmann::json::parse_error&) {
+        return false; // not JSON at all - treat as a plain game command
+    }
+    if (!j.is_object() || j.value("type", "") != "join") return false;
+
+    std::string username = j.value("username", "");
+    if (username.empty()) {
+        sendJson(hdl, nlohmann::json{{"type", "join_rejected"}, {"error", "ERROR MALFORMED_JOIN"}}.dump());
+        return true;
+    }
+
+    JoinResult result = session_.handleJoin(username);
+    if (!result.ok) {
+        sendJson(hdl, nlohmann::json{{"type", "join_rejected"}, {"error", result.error}}.dump());
+        return true;
+    }
+
+    hdlToColor_[hdl] = result.color;
+    sendJson(hdl, nlohmann::json{
+        {"type", "joined"}, {"color", colorName(result.color)}, {"username", username}
+    }.dump());
+
+    if (result.hasOpponent) {
+        for (const auto& [otherHdl, otherColor] : hdlToColor_) {
+            if (otherColor != result.color) {
+                sendJson(otherHdl, nlohmann::json{{"type", "opponent_joined"}, {"username", username}}.dump());
+                break;
+            }
+        }
+    }
+    return true;
+}
+
+void WebSocketServer::onMessage(websocketpp::connection_hdl hdl, server_t::message_ptr msg) {
     const std::string& payload = msg->get_payload();
+    if (tryHandleJoin(hdl, payload)) return;
+
     auto parsed = GameCommandParser::parse(payload);
     if (parsed.ok) {
         auto result = session_.handleCommand(parsed.command);

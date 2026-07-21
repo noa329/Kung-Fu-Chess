@@ -174,3 +174,35 @@ TEST_CASE("after attachLogger, a king capture logs a lifecycle end with the resu
     CHECK(log.find("lifecycle phase=end") != std::string::npos);
     CHECK(log.find("result=White Wins") != std::string::npos);
 }
+
+// Task B2: join -> color assignment. Pure decision, decoupled from sockets/
+// JSON - the wire-format parsing/dispatch and response framing that turn
+// this into an actual `{"type":"join",...}` message live in
+// WebSocketServer.cpp (networking glue, manually verified instead, same
+// as the rest of A5).
+
+TEST_CASE("the first join is assigned White with no opponent yet") {
+    GameSession session;
+    auto result = session.handleJoin("Alice");
+    CHECK(result.ok);
+    CHECK(result.color == 'w');
+    CHECK(result.hasOpponent == false);
+}
+
+TEST_CASE("the second join is assigned Black and reports the opponent is present") {
+    GameSession session;
+    session.handleJoin("Alice");
+    auto result = session.handleJoin("Bob");
+    CHECK(result.ok);
+    CHECK(result.color == 'b');
+    CHECK(result.hasOpponent == true);
+}
+
+TEST_CASE("a third join is rejected") {
+    GameSession session;
+    session.handleJoin("Alice");
+    session.handleJoin("Bob");
+    auto result = session.handleJoin("Carol");
+    CHECK(result.ok == false);
+    CHECK(result.error == "ERROR SESSION_FULL");
+}
