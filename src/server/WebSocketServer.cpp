@@ -50,7 +50,15 @@ std::vector<std::vector<std::string>> standardStartingPosition() {
 } // namespace
 
 WebSocketServer::WebSocketServer(uint16_t port)
-    : port_(port), registry_(kMaxConnections) {
+    : port_(port),
+      logFile_("server.log", std::ios::app),
+      logger_(logFile_.is_open() ? std::vector<std::ostream*>{&std::cout, &logFile_}
+                                  : std::vector<std::ostream*>{&std::cout}),
+      registry_(kMaxConnections) {
+    // logFile_.is_open() can be false (e.g. no write permission in the
+    // working directory) - Logger's sink list just omits it rather than
+    // failing startup over a log file, console logging still works.
+    session_.attachLogger(logger_);
     session_.engine().startGame(standardStartingPosition());
 }
 

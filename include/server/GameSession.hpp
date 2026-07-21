@@ -2,6 +2,7 @@
 #define SERVER_GAME_SESSION_H
 #include "GameEngine.hpp"
 #include "GameCommandParser.hpp"
+#include "Logger.hpp"
 #include <string>
 
 // Result of GameSession::handleCommand - covers only the validation this
@@ -22,11 +23,28 @@ struct CommandResult {
 // already-parsed ParsedCommand (Task A2) into the corresponding
 // GameEngine calls. Connection/socket handling is a later task (A5) -
 // this class deliberately knows nothing about networking yet.
+//
+// Subscribes to engine_.events() (onMoveLogged/onScoreUpdated/
+// onGameLifecycle/onSound) in the constructor, always - but every
+// subscription is gated on logger_ being non-null, so a default-
+// constructed GameSession (used throughout the existing test suite)
+// stays silent. attachLogger() lets the composition root (WebSocketServer)
+// opt a real session into logging without needing a second constructor
+// overload or breaking GameSession()'s existing default-constructibility.
+// Logger itself is owned externally (WebSocketServer, later shared across
+// every session once SessionManager exists in Task D1) - not per-session,
+// so multiple concurrent sessions can log to one shared file.
 class GameSession {
     GameEngine engine_;
+    Logger* logger_ = nullptr;
+
+    void logEvent(const std::string& message);
 
 public:
+    GameSession();
+
     GameEngine& engine() { return engine_; }
+    void attachLogger(Logger& logger) { logger_ = &logger; }
 
     CommandResult handleCommand(const ParsedCommand& cmd);
 };

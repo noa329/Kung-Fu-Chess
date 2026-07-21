@@ -244,7 +244,7 @@ verification procedure instead (real sockets aren't practical to doctest,
 same reasoning as the graphics build's headless-PNG-probe convention for
 OpenCV rendering).
 
-### Phase A — Basic WebSocket server (deck item 1)
+### Phase A — Basic WebSocket server (deck item 1) ✅ complete (A0–A6)
 
 | Task | What | Depends on | Tests |
 |---|---|---|---|
@@ -367,7 +367,7 @@ toolchain's `bin/` is on `PATH`) before running `make`/`./run_tests.exe`.
 that dead connection's slot occupied - `ConnectionRegistry` has no
 `remove()` yet (Task D4). Restart `kungfu_server.exe` between test runs
 if connections seem stuck at capacity.
-| **A6** | `include/logging/Logger.hpp` (shared utility, file + console sinks) + wire `GameSession` to subscribe it to `onMoveLogged`/`onScoreUpdated`/`onGameLifecycle`/`onSound` for structured server-side game-event logs. This is a slice of deck item 6, pulled forward because it's small and the natural place to plug into the EventBus subscriptions already designed for exactly this. | A5 | doctest: `Logger` formats a line correctly given known inputs (inject a fake sink/stream). Manual: confirm log lines appear during the A5 manual test. |
+| **A6** ✅ | `Logger` (`include/logging/Logger.hpp` + `src/logging/Logger.cpp`) — a plain instantiable class, **not a singleton**: `server/` and the future shell client (Phase F) are separate OS processes, so there's nothing to share via in-memory global state anyway. Deliberately generic (`log(message)` writes a timestamped line to every given `std::ostream*` sink, nulls skipped) - event-specific formatting stays in the caller, since the shell client will log entirely different kinds of lines that have nothing to do with `EventBus` events. `GameSession` gained an optional `Logger*` (`attachLogger()`), subscribed unconditionally in its constructor but gated on non-null so the **existing** default-constructed `GameSession()` used throughout every earlier test stays silent - no test breakage, no second constructor overload. `WebSocketServer` owns the real `Logger` (console + `server.log`, gitignored) and calls `session_.attachLogger(logger_)` once at construction; multiple sessions will share one `Logger` once `SessionManager` exists (Task D1), not one per session. | A5 | 5 doctest cases for `Logger` itself (multi-sink, timestamp prefix, multi-line ordering, empty-sinks no-op, null-sink-in-list skipped) + 5 for `GameSession`'s subscriptions (silent without `attachLogger`, move logs color/notation, jump logs a sound event, a resolved capture logs a score update, a king capture logs `lifecycle phase=end` with the result). Manual: fresh server run showed `server.log` picking up real `lifecycle phase=start` / `sound name=move` / `move color=w notation=e2e4` lines from an actual client command, confirming the `EventBus` wiring end-to-end, not just the unit tests. |
 
 ### Phase B — Home screen basic (deck item 2)
 

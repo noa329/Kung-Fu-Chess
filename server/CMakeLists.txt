@@ -79,10 +79,18 @@ file(GLOB SERVER_LAYER_SOURCES
     "${MAIN_PROJECT_ROOT}/src/server/*.cpp"
 )
 
+# logging/ (Task A6) - shared by server/ and, later, the shell client
+# (Phase F). Also dual-compiled into run_tests.exe; no websocketpp/Asio
+# dependency.
+file(GLOB LOGGING_SOURCES
+    "${MAIN_PROJECT_ROOT}/src/logging/*.cpp"
+)
+
 add_executable(kungfu_server
     main.cpp
     ${ENGINE_SOURCES}
     ${SERVER_LAYER_SOURCES}
+    ${LOGGING_SOURCES}
 )
 
 target_include_directories(kungfu_server PRIVATE
@@ -96,6 +104,7 @@ target_include_directories(kungfu_server PRIVATE
     "${MAIN_PROJECT_ROOT}/include/game_engine"
     "${MAIN_PROJECT_ROOT}/include/event_bus"
     "${MAIN_PROJECT_ROOT}/include/server"
+    "${MAIN_PROJECT_ROOT}/include/logging"
     "${MAIN_PROJECT_ROOT}/third_party/nlohmann"
 )
 

@@ -5,9 +5,11 @@
 #include <asio.hpp>
 #include "GameSession.hpp"
 #include "ConnectionRegistry.hpp"
+#include "Logger.hpp"
 #include <cstdint>
 #include <memory>
 #include <chrono>
+#include <fstream>
 
 // Wires GameCommandParser (A2) + GameSession (A3) + GameStateSerializer
 // (A4) together over a real WebSocket connection: exactly one hardcoded
@@ -50,6 +52,13 @@ private:
 
     uint16_t port_;
     server_t server_;
+    // Opened before logger_ (member init order = declaration order) so the
+    // stream is valid by the time Logger's sink list references it -
+    // logFile_ must outlive logger_, and logger_ must outlive session_'s
+    // use of it (attachLogger() just stores a pointer, doesn't extend
+    // lifetime), hence this exact declaration order.
+    std::ofstream logFile_;
+    Logger logger_;
     GameSession session_;
     ConnectionRegistry<websocketpp::connection_hdl> registry_;
     std::unique_ptr<asio::steady_timer> tickTimer_;

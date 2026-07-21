@@ -6,6 +6,29 @@ CommandResult fail(const std::string& error) {
 }
 } // namespace
 
+void GameSession::logEvent(const std::string& message) {
+    if (logger_) logger_->log(message);
+}
+
+GameSession::GameSession() {
+    engine_.events().onMoveLogged.subscribe([this](const MoveLoggedEvent& e) {
+        logEvent("move color=" + std::string(1, e.color) + " notation=" + e.notation
+                  + " atMs=" + std::to_string(e.atMs));
+    });
+    engine_.events().onScoreUpdated.subscribe([this](const ScoreUpdatedEvent& e) {
+        logEvent("score color=" + std::string(1, e.color) + " newScore=" + std::to_string(e.newScore)
+                  + " delta=" + std::to_string(e.delta));
+    });
+    engine_.events().onGameLifecycle.subscribe([this](const GameLifecycleEvent& e) {
+        std::string message = "lifecycle phase=" + e.phase;
+        if (e.phase == "end") message += " result=" + e.result;
+        logEvent(message);
+    });
+    engine_.events().onSound.subscribe([this](const SoundEvent& e) {
+        logEvent("sound name=" + e.name);
+    });
+}
+
 CommandResult GameSession::handleCommand(const ParsedCommand& cmd) {
     GameSnapshot snap = engine_.snapshot();
     int row = cmd.from.row;

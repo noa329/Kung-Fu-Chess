@@ -42,3 +42,6 @@ kung_fu_chess_vpl.zip
 .scripts/
 third_party/asio/
 third_party/websocketpp/
+
+# --- לוגים בזמן ריצה ---
+server.log

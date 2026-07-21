@@ -1,5 +1,6 @@
 #include "doctest.h"
 #include "GameSession.hpp"
+#include <sstream>
 
 // server layer: GameSession owns one GameEngine and turns an already-parsed
 // ParsedCommand (see GameCommandParser, Task A2) into GameEngine calls.
@@ -99,4 +100,77 @@ TEST_CASE("an illegal-shape move is accepted by validation but silently not sche
     session.engine().wait(2000);
     auto snap = session.engine().snapshot();
     CHECK(snap.boardTokens == std::vector<std::vector<std::string>>{{"wR", ".", "."}});
+}
+
+// Task A6: GameSession subscribes engine_.events() to an optional Logger,
+// gated so a default-constructed GameSession (used throughout every test
+// above) stays silent unless attachLogger() is called - these tests are
+// what confirm the gate actually works both ways.
+
+TEST_CASE("without attachLogger, a move produces no log output") {
+    std::ostringstream sink;
+    Logger logger({&sink});
+    GameSession session; // no attachLogger call
+    session.engine().loadBoard({{"wR", ".", "."}});
+
+    session.handleCommand(ParsedCommand{false, 'w', 'R', Position{0, 0}, Position{0, 2}});
+
+    CHECK(sink.str().empty());
+}
+
+TEST_CASE("after attachLogger, a move logs color/notation") {
+    std::ostringstream sink;
+    Logger logger({&sink});
+    GameSession session;
+    session.attachLogger(logger);
+    session.engine().loadBoard({{"wR", ".", "."}});
+
+    session.handleCommand(ParsedCommand{false, 'w', 'R', Position{0, 0}, Position{0, 2}});
+
+    std::string log = sink.str();
+    CHECK(log.find("move") != std::string::npos);
+    CHECK(log.find("color=w") != std::string::npos);
+    CHECK(log.find("notation=a1c1") != std::string::npos); // single-row board, see GameCommandParser tests
+}
+
+TEST_CASE("after attachLogger, a jump logs a sound event") {
+    std::ostringstream sink;
+    Logger logger({&sink});
+    GameSession session;
+    session.attachLogger(logger);
+    session.engine().loadBoard({{"wR", ".", "."}});
+
+    session.handleCommand(ParsedCommand{true, 'w', 'R', Position{0, 0}, Position{}});
+
+    CHECK(sink.str().find("sound name=jump") != std::string::npos);
+}
+
+TEST_CASE("after attachLogger, a resolved capture logs a score update") {
+    std::ostringstream sink;
+    Logger logger({&sink});
+    GameSession session;
+    session.attachLogger(logger);
+    session.engine().loadBoard({{"wR", "bN", "."}});
+
+    session.handleCommand(ParsedCommand{false, 'w', 'R', Position{0, 0}, Position{0, 1}});
+    session.engine().wait(1000); // resolve the capture
+
+    std::string log = sink.str();
+    CHECK(log.find("score color=w") != std::string::npos);
+    CHECK(log.find("delta=3") != std::string::npos); // knight
+}
+
+TEST_CASE("after attachLogger, a king capture logs a lifecycle end with the result") {
+    std::ostringstream sink;
+    Logger logger({&sink});
+    GameSession session;
+    session.attachLogger(logger);
+    session.engine().loadBoard({{"wR", "bK"}});
+
+    session.handleCommand(ParsedCommand{false, 'w', 'R', Position{0, 0}, Position{0, 1}});
+    session.engine().wait(1000);
+
+    std::string log = sink.str();
+    CHECK(log.find("lifecycle phase=end") != std::string::npos);
+    CHECK(log.find("result=White Wins") != std::string::npos);
 }
