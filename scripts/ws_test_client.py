@@ -18,6 +18,7 @@ import argparse
 import base64
 import hashlib
 import os
+import queue
 import socket
 import struct
 import sys
@@ -114,7 +115,19 @@ def recv_frame(sock: socket.socket):
     return opcode, payload
 
 
-def listen_loop(sock: socket.socket) -> None:
+def listen_loop(sock: socket.socket, incoming: "queue.Queue[str]") -> None:
+    # Text-frame messages go on the queue, never straight to print(). This
+    # thread runs concurrently with the main thread's blocking input()
+    # call, and a concurrent print() while input() has a line half-typed
+    # doesn't just look messy - on Windows consoles it can corrupt the
+    # pending input buffer itself (observed as the typed command reaching
+    # the server duplicated, e.g. "WPe2e4" arriving as "WPe2e4WPe2e4").
+    # Queueing here and draining only from main() between input() calls
+    # (see main()) guarantees stdout is written by exactly one thread at a
+    # time. The close/error paths below are the one exception: they print
+    # directly, but only immediately before os._exit() ends the whole
+    # process, so there's no later input() call left for a corrupted
+    # buffer to affect.
     try:
         while True:
             opcode, payload = recv_frame(sock)
@@ -122,7 +135,7 @@ def listen_loop(sock: socket.socket) -> None:
                 print("\n[server closed the connection]")
                 os._exit(0)
             if opcode == 0x1:  # text
-                print(f"\n< {payload.decode('utf-8', errors='replace')}\n> ", end="", flush=True)
+                incoming.put(f"< {payload.decode('utf-8', errors='replace')}")
     except (ConnectionError, OSError) as e:
         print(f"\n[connection lost: {e}]")
         os._exit(1)
@@ -140,19 +153,28 @@ def main() -> None:
     handshake(sock, args.host, args.port, args.path)
     print(f"Connected to ws://{args.host}:{args.port}{args.path}")
 
-    threading.Thread(target=listen_loop, args=(sock,), daemon=True).start()
+    incoming: "queue.Queue[str]" = queue.Queue()
+    threading.Thread(target=listen_loop, args=(sock, incoming), daemon=True).start()
 
     try:
         while True:
-            # On some terminals (observed under MSYS2/mintty on Windows),
-            # input() only strips the trailing \n and leaves a \r in the
-            # returned string - invisible on screen (it just returns the
-            # cursor to column 0) but a real extra byte, which turns e.g. a
-            # correct 6-character "WPe2e4" into a 7-byte wire command the
-            # server's fixed-length parser then rejects as malformed. Strip
-            # it here rather than in the parser: this is an artifact of how
-            # this script reads a line, not something the wire protocol
-            # needs to tolerate from a real client.
+            # Drain whatever broadcasts piled up in the queue *before*
+            # calling input() again - never while one is pending. This is
+            # the only place incoming messages get printed (see
+            # listen_loop's comment for why the split matters): input() is
+            # not yet blocking here, so there is no half-typed line for a
+            # concurrent print() to corrupt.
+            while True:
+                try:
+                    print(incoming.get_nowait())
+                except queue.Empty:
+                    break
+
+            # Defensive: strip a trailing \r/\n in case the local terminal
+            # ever leaves one in the returned string. Not the fix for the
+            # duplicated-input bug above (that was the print/input race,
+            # not stray bytes) - just cheap insurance against a genuinely
+            # malformed command going out.
             line = input("> ").rstrip("\r\n")
             if line:
                 send_text_frame(sock, line)

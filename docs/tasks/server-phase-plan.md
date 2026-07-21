@@ -310,22 +310,29 @@ python scripts/ws_test_client.py
 python scripts/ws_test_client.py
 ```
 
-Both client terminals immediately start printing incoming state
-broadcasts prefixed `< ` - **this streams continuously** (a broadcast on
-every tick, so expect fast, near-continuous scroll in both terminals,
-not a one-shot response). That alone confirms both connections are live
-and receiving state.
+`ws_test_client.py` queues incoming broadcasts rather than printing them
+the instant they arrive - printing from the background listener thread
+while `input()` has a line half-typed was found to corrupt the pending
+input buffer on Windows consoles (a typed `WPe2e4` could reach the server
+as `WPe2e4WPe2e4`). Queued broadcasts get flushed to the terminal right
+before each `input()` call, i.e. every time you press Enter (an empty
+Enter works too, if you just want to flush without sending a command) -
+so **each client terminal shows a batch of `< `-prefixed state broadcasts
+right after every Enter you press**, not a continuous stream between
+keystrokes. Press Enter once on an empty prompt in both terminals to
+confirm both connections are live and receiving state before typing a
+real command.
 
 In **client A's** terminal, type a move and press Enter:
 ```
 WPe2e4
 ```
-Within a couple of seconds (2000ms simulated travel time), watch the
-`"board"` field in **both** terminals' incoming stream: rank-2 file-e
-(`board[6][4]`) goes from `"wP"` to `"."`, rank-4 file-e (`board[4][4]`)
-goes from `"."` to `"wP"`. Both clients should show the same resolved
-position at the same time - that's the "both clients see the result"
-requirement.
+Wait a couple of seconds (2000ms simulated travel time), then press Enter
+on an empty prompt in **both** terminals to flush the queued broadcasts,
+and watch the `"board"` field: rank-2 file-e (`board[6][4]`) goes from
+`"wP"` to `"."`, rank-4 file-e (`board[4][4]`) goes from `"."` to `"wP"`.
+Both clients should show the same resolved position - that's the "both
+clients see the result" requirement.
 
 ```sh
 # 5. Terminal 4 (or reuse 2/3 after Ctrl-C) - the 3rd connection
