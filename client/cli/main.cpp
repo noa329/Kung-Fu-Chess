@@ -4,20 +4,76 @@
 // {"type":"join","username":"..."}), and reacts to the assignment -
 // prints "You are White"/"You are Black", and (only relevant to White,
 // since Black is only ever assigned once White already joined) a "waiting
-// for opponent" state until the "opponent_joined" notice arrives. No
-// board/move commands yet - that's B4's job; state-tick broadcasts (JSON
-// frames with no "type" field) are silently ignored here for now. Unlike
-// A1's throwaway linkage proof, this file IS the real deliverable: later
-// tasks extend this same main(), they don't replace it.
+// for opponent" state until the "opponent_joined" notice arrives.
+// Task B4: the real gameplay loop. Every state-tick broadcast (a JSON
+// frame with a "board" field and no "type" - see GameStateSerializer, A4)
+// gets printed via BoardPrinter; each stdin line is forwarded verbatim as
+// the command string to the server - this client deliberately has no
+// command parser of its own, since GameCommandParser (A2) already lives
+// server-side and is the source of truth for what's a valid command.
+//
+// Threading model, and why: websocketpp's client.run() blocks on the
+// asio event loop, so it can't share a thread with a blocking
+// std::getline(std::cin, ...) loop. This runs client.run() on its own
+// thread and keeps the interactive stdin loop on main() - the same
+// division of labor as scripts/ws_test_client.py (main thread owns
+// input(), a background thread owns the socket), for the same reason:
+// that script's own history (see git log - the CRLF/duplicate-input
+// bugs) already proved that a background thread printing directly to a
+// Windows console while another thread has a line half-typed at a
+// blocking read can corrupt the pending input buffer, not just interleave
+// output. So the network thread never calls std::cout directly - it only
+// enqueues text via enqueueOutput(); the main loop drains and prints that
+// queue immediately before each blocking std::getline() call, mirroring
+// ws_test_client.py's queue-and-flush-before-input() fix exactly.
+//
+// Unlike A1's throwaway linkage proof, this file IS the real deliverable:
+// each task extends this same main(), none of them replace it.
 #include <websocketpp/config/asio_no_tls_client.hpp>
 #include <websocketpp/client.hpp>
 #include <nlohmann/json.hpp>
+#include "BoardPrinter.hpp"
 #include <iostream>
+#include <sstream>
 #include <string>
+#include <thread>
+#include <mutex>
+#include <queue>
 
 using client_t = websocketpp::client<websocketpp::config::asio_client>;
 
 namespace {
+
+std::mutex outputMutex;
+std::queue<std::string> outputQueue;
+
+// Called from the network thread - never prints directly, see the
+// threading-model comment at the top of this file for why.
+void enqueueOutput(const std::string& text) {
+    std::lock_guard<std::mutex> lock(outputMutex);
+    outputQueue.push(text);
+}
+
+// Called from main()'s stdin loop only, right before each blocking
+// std::getline() - never from the network thread.
+void drainOutput() {
+    std::queue<std::string> local;
+    {
+        std::lock_guard<std::mutex> lock(outputMutex);
+        std::swap(local, outputQueue);
+    }
+    while (!local.empty()) {
+        std::cout << local.front();
+        local.pop();
+    }
+    std::cout.flush();
+}
+
+std::string trimmed(const std::string& raw) {
+    size_t start = raw.find_first_not_of(" \t\r\n");
+    size_t end = raw.find_last_not_of(" \t\r\n");
+    return start == std::string::npos ? "" : raw.substr(start, end - start + 1);
+}
 
 std::string promptUsername() {
     std::string username;
@@ -26,12 +82,7 @@ std::string promptUsername() {
         if (!std::getline(std::cin, username)) {
             return ""; // stdin closed - caller decides what to do
         }
-        // Trim surrounding whitespace - cheap insurance against a stray
-        // trailing \r, same class of bug the server's ws_test_client.py
-        // history already ran into on the command-line side.
-        size_t start = username.find_first_not_of(" \t\r\n");
-        size_t end = username.find_last_not_of(" \t\r\n");
-        username = (start == std::string::npos) ? "" : username.substr(start, end - start + 1);
+        username = trimmed(username);
         if (!username.empty()) return username;
         std::cout << "Username can't be empty." << std::endl;
     }
@@ -49,20 +100,24 @@ void handleServerMessage(const std::string& payload) {
     std::string type = j.value("type", "");
     if (type == "joined") {
         std::string color = j.value("color", "");
-        std::cout << "You are " << (color == "white" ? "White" : "Black") << "." << std::endl;
-        if (color == "white") {
-            std::cout << "Waiting for opponent..." << std::endl;
-        } else {
-            std::cout << "Opponent already connected. Game starting!" << std::endl;
-        }
+        std::ostringstream out;
+        out << "You are " << (color == "white" ? "White" : "Black") << ".\n";
+        out << (color == "white" ? "Waiting for opponent...\n"
+                                  : "Opponent already connected. Game starting!\n");
+        enqueueOutput(out.str());
     } else if (type == "opponent_joined") {
-        std::cout << "Opponent connected: " << j.value("username", "?") << ". Game starting!" << std::endl;
+        enqueueOutput("Opponent connected: " + j.value("username", "?") + ". Game starting!\n");
     } else if (type == "join_rejected") {
-        std::cout << "Join rejected: " << j.value("error", "unknown error") << std::endl;
+        enqueueOutput("Join rejected: " + j.value("error", "unknown error") + "\n");
+    } else if (j.contains("board")) {
+        // Periodic state-tick broadcast (GameStateSerializer, A4) - no
+        // "type" field at all. BoardPrinter (text_io) prints the exact
+        // same token format the text-protocol binary/tests already use.
+        auto board = j.at("board").get<std::vector<std::vector<std::string>>>();
+        std::ostringstream out;
+        BoardPrinter::print(board, out);
+        enqueueOutput(out.str());
     }
-    // Anything else (a periodic state-tick broadcast, which has no "type"
-    // field at all - see GameStateSerializer) is silently ignored here;
-    // printing the board from it via BoardPrinter is Task B4's job.
 }
 
 } // namespace
@@ -82,23 +137,23 @@ int main(int argc, char** argv) {
     client.init_asio();
 
     client.set_open_handler([&client, &username](websocketpp::connection_hdl hdl) {
-        std::cout << "connected to server" << std::endl;
+        enqueueOutput("connected to server\n");
         nlohmann::json join{{"type", "join"}, {"username", username}};
         try {
             client.send(hdl, join.dump(), websocketpp::frame::opcode::text);
         } catch (const websocketpp::exception& e) {
-            std::cout << "failed to send join: " << e.what() << std::endl;
+            enqueueOutput(std::string("failed to send join: ") + e.what() + "\n");
         }
     });
     client.set_message_handler([](websocketpp::connection_hdl, client_t::message_ptr msg) {
         handleServerMessage(msg->get_payload());
     });
     client.set_close_handler([](websocketpp::connection_hdl) {
-        std::cout << "connection closed" << std::endl;
+        enqueueOutput("connection closed\n");
     });
     client.set_fail_handler([&client](websocketpp::connection_hdl hdl) {
         auto con = client.get_con_from_hdl(hdl);
-        std::cout << "connection failed: " << con->get_ec().message() << std::endl;
+        enqueueOutput("connection failed: " + con->get_ec().message() + "\n");
     });
 
     websocketpp::lib::error_code ec;
@@ -107,13 +162,34 @@ int main(int argc, char** argv) {
         std::cout << "could not create connection to " << uri << ": " << ec.message() << std::endl;
         return 1;
     }
+    websocketpp::connection_hdl hdl = con->get_handle();
 
     client.connect(con);
-    // Blocks running the asio event loop (handshake + incoming broadcasts)
-    // until the connection closes or the process is killed - same run-until-
-    // killed shape as WebSocketServer::run(), so a live connection is
-    // something you can visibly watch, not something that connects and
-    // immediately exits.
-    client.run();
+
+    // Network thread: runs the asio event loop (handshake, join response,
+    // every state-tick broadcast) for as long as the connection is alive.
+    std::thread networkThread([&client]() { client.run(); });
+
+    // Main thread: the interactive gameplay loop. Each line typed is
+    // forwarded verbatim as the command string - no client-side parser,
+    // GameCommandParser (A2) server-side is the only source of truth for
+    // what's valid. An empty line just flushes queued output, matching
+    // ws_test_client.py's existing convention.
+    std::string line;
+    while (true) {
+        drainOutput();
+        if (!std::getline(std::cin, line)) break;
+        line = trimmed(line);
+        if (line.empty()) continue;
+        try {
+            client.send(hdl, line, websocketpp::frame::opcode::text);
+        } catch (const websocketpp::exception& e) {
+            enqueueOutput(std::string("failed to send command: ") + e.what() + "\n");
+        }
+    }
+    drainOutput();
+
+    client.stop();
+    if (networkThread.joinable()) networkThread.join();
     return 0;
 }

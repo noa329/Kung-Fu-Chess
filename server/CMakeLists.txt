@@ -132,6 +132,11 @@ endif()
 # above instead of fetching a second copy of both for no benefit.
 add_executable(kungfu_client
     "${MAIN_PROJECT_ROOT}/client/cli/main.cpp"
+    # Task B4: prints each state broadcast's board tokens. Pure/no engine
+    # dependency, so it's cheap to compile standalone here rather than
+    # pulling in any of ENGINE_SOURCES - kungfu_server doesn't need this
+    # (it never prints a board), hence it's only on this target, not both.
+    "${MAIN_PROJECT_ROOT}/src/text_io/BoardPrinter.cpp"
 )
 
 target_include_directories(kungfu_client PRIVATE
@@ -139,6 +144,8 @@ target_include_directories(kungfu_client PRIVATE
     ${websocketpp_SOURCE_DIR}
     # Task B3: client sends/parses join-protocol JSON now too.
     "${MAIN_PROJECT_ROOT}/third_party/nlohmann"
+    # Task B4: BoardPrinter.
+    "${MAIN_PROJECT_ROOT}/include/text_io"
 )
 
 target_compile_definitions(kungfu_client PRIVATE
