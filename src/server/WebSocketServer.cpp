@@ -1,9 +1,36 @@
 #include "WebSocketServer.hpp"
 #include "GameCommandParser.hpp"
 #include "GameStateSerializer.hpp"
+#include <iomanip>
 #include <iostream>
+#include <sstream>
 
 namespace {
+
+// Renders non-printable bytes (notably a stray \r from a client whose line
+// reader didn't strip Windows CRLF endings) visibly instead of letting them
+// mangle the log line - a malformed command whose actual byte length
+// doesn't match what it looks like on screen is exactly the case this
+// exists to catch.
+std::string escapeForLog(const std::string& raw) {
+    std::ostringstream out;
+    for (unsigned char c : raw) {
+        switch (c) {
+            case '\r': out << "\\r"; break;
+            case '\n': out << "\\n"; break;
+            case '\t': out << "\\t"; break;
+            default:
+                if (c < 0x20 || c == 0x7F) {
+                    out << "\\x" << std::hex << std::uppercase << std::setw(2)
+                        << std::setfill('0') << static_cast<int>(c) << std::dec;
+                } else {
+                    out << static_cast<char>(c);
+                }
+        }
+    }
+    return out.str();
+}
+
 // Same literal as kungfu-graphics/cpp/src/main.cpp's
 // standardStartingPosition() - duplicated rather than shared, since the
 // two entry points don't otherwise share a "board setup" layer and this
@@ -38,14 +65,21 @@ void WebSocketServer::onOpen(websocketpp::connection_hdl hdl) {
 }
 
 void WebSocketServer::onMessage(websocketpp::connection_hdl, server_t::message_ptr msg) {
-    auto parsed = GameCommandParser::parse(msg->get_payload());
+    const std::string& payload = msg->get_payload();
+    auto parsed = GameCommandParser::parse(payload);
     if (parsed.ok) {
         auto result = session_.handleCommand(parsed.command);
         if (!result.ok) {
-            std::cout << "rejected command: " << msg->get_payload() << " (" << result.error << ")" << std::endl;
+            std::cout << "rejected command: " << payload << " (" << result.error << ")" << std::endl;
         }
     } else {
-        std::cout << "malformed command: " << msg->get_payload() << " (" << parsed.error << ")" << std::endl;
+        // Byte length + escaped repr, not just the raw payload - a trailing
+        // \r (invisible on a terminal, since it just returns the cursor to
+        // column 0) reads as "the same 6 characters I typed" while actually
+        // being 7 bytes, which is exactly the kind of malformed command this
+        // needs to make visible.
+        std::cout << "malformed command: \"" << escapeForLog(payload) << "\" ("
+                   << payload.size() << " bytes) (" << parsed.error << ")" << std::endl;
     }
     broadcastState();
 }

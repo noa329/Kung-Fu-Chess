@@ -348,6 +348,13 @@ all test cases passing (111 as of this task, more once later tasks add
 their own). If the build ever tries to compile `websocketpp` headers
 here, `SERVER_ONLY_SRC` in the `Makefile` has regressed.
 
+**Run step 6 from an MSYS2 terminal, not a plain PowerShell prompt.**
+`make` isn't on PowerShell's `PATH` by default (it's an MSYS2/ucrt64
+toolchain binary), so invoking it directly from PowerShell fails with
+"make is not recognized," which looks like a broken build rather than a
+missing shell. Open an MSYS2/ucrt64 shell (or otherwise ensure that
+toolchain's `bin/` is on `PATH`) before running `make`/`./run_tests.exe`.
+
 **Known limitation to expect, not a bug:** if you kill a client terminal
 (Ctrl-C) instead of letting the script exit cleanly, the server keeps
 that dead connection's slot occupied - `ConnectionRegistry` has no

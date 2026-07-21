@@ -144,7 +144,16 @@ def main() -> None:
 
     try:
         while True:
-            line = input("> ")
+            # On some terminals (observed under MSYS2/mintty on Windows),
+            # input() only strips the trailing \n and leaves a \r in the
+            # returned string - invisible on screen (it just returns the
+            # cursor to column 0) but a real extra byte, which turns e.g. a
+            # correct 6-character "WPe2e4" into a 7-byte wire command the
+            # server's fixed-length parser then rejects as malformed. Strip
+            # it here rather than in the parser: this is an artifact of how
+            # this script reads a line, not something the wire protocol
+            # needs to tolerate from a real client.
+            line = input("> ").rstrip("\r\n")
             if line:
                 send_text_frame(sock, line)
     except (EOFError, KeyboardInterrupt):
