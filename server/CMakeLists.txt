@@ -121,3 +121,29 @@ target_compile_definitions(kungfu_server PRIVATE
 if(WIN32)
     target_link_libraries(kungfu_server PRIVATE ws2_32 wsock32)
 endif()
+
+# Task B1: client/cli's WebSocket connectivity smoke test. Built here rather
+# than as its own top-level CMake project (unlike server/ vs
+# kungfu-graphics/cpp/) because the reason those two are split is a real
+# MSVC-vs-MinGW toolchain conflict (OpenCV's prebuilt .lib is MSVC-ABI only);
+# client/cli has no such conflict - it needs the exact same MSYS2/ucrt64 +
+# asio + websocketpp dependencies as kungfu_server, so a second target here
+# reuses asio_SOURCE_DIR/websocketpp_SOURCE_DIR from the FetchContent calls
+# above instead of fetching a second copy of both for no benefit.
+add_executable(kungfu_client
+    "${MAIN_PROJECT_ROOT}/client/cli/main.cpp"
+)
+
+target_include_directories(kungfu_client PRIVATE
+    ${asio_SOURCE_DIR}/asio/include
+    ${websocketpp_SOURCE_DIR}
+)
+
+target_compile_definitions(kungfu_client PRIVATE
+    ASIO_STANDALONE
+    _WEBSOCKETPP_CPP11_THREAD_
+)
+
+if(WIN32)
+    target_link_libraries(kungfu_client PRIVATE ws2_32 wsock32)
+endif()
