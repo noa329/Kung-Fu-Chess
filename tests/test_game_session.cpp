@@ -212,3 +212,53 @@ TEST_CASE("a third seat assignment is rejected") {
     CHECK(result.ok == false);
     CHECK(result.error == "ERROR SESSION_FULL");
 }
+
+// Task D4: colorOf()/usernameFor() let WebSocketServer translate between
+// "this hdl closed, and I only know its username" and "this session's
+// white/black seat" without GameSession ever needing to know about
+// connection_hdl - see GameSession.hpp's class comment.
+
+TEST_CASE("colorOf reports the seat a known username occupies") {
+    GameSession session;
+    session.assignSeat("Alice");
+    session.assignSeat("Bob");
+    CHECK(session.colorOf("Alice") == 'w');
+    CHECK(session.colorOf("Bob") == 'b');
+}
+
+TEST_CASE("colorOf reports the null char for an unknown username") {
+    GameSession session;
+    session.assignSeat("Alice");
+    CHECK(session.colorOf("Carol") == '\0');
+}
+
+TEST_CASE("usernameFor reports the username occupying a seat, empty if unfilled") {
+    GameSession session;
+    session.assignSeat("Alice");
+    CHECK(session.usernameFor('w') == "Alice");
+    CHECK(session.usernameFor('b') == "");
+}
+
+// Task D4: per-seat connection status - defaults connected, flips on
+// markDisconnected()/markReconnected(). Pure bookkeeping, no timers (the
+// real 20s countdown timer lives in WebSocketServer, manually verified
+// separately - same split D3's MatchmakingTimeout established).
+
+TEST_CASE("a freshly assigned seat starts out connected") {
+    GameSession session;
+    session.assignSeat("Alice");
+    CHECK(session.isConnected('w') == true);
+}
+
+TEST_CASE("markDisconnected/markReconnected flip only the given seat's status") {
+    GameSession session;
+    session.assignSeat("Alice");
+    session.assignSeat("Bob");
+
+    session.markDisconnected('w');
+    CHECK(session.isConnected('w') == false);
+    CHECK(session.isConnected('b') == true); // Bob's seat is untouched
+
+    session.markReconnected('w');
+    CHECK(session.isConnected('w') == true);
+}

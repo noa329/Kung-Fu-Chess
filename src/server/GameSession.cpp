@@ -68,3 +68,31 @@ JoinResult GameSession::assignSeat(const std::string& username) {
     }
     return {false, ' ', false, "ERROR SESSION_FULL"};
 }
+
+char GameSession::colorOf(const std::string& username) const {
+    if (whiteJoined_ && whiteUsername_ == username) return 'w';
+    if (blackJoined_ && blackUsername_ == username) return 'b';
+    return '\0';
+}
+
+std::string GameSession::usernameFor(char color) const {
+    if (color == 'w') return whiteUsername_;
+    if (color == 'b') return blackUsername_;
+    return "";
+}
+
+void GameSession::markDisconnected(char color) {
+    if (color == 'w') whiteConnected_ = false;
+    else if (color == 'b') blackConnected_ = false;
+}
+
+void GameSession::markReconnected(char color) {
+    if (color == 'w') whiteConnected_ = true;
+    else if (color == 'b') blackConnected_ = true;
+}
+
+bool GameSession::isConnected(char color) const {
+    if (color == 'w') return whiteConnected_;
+    if (color == 'b') return blackConnected_;
+    return true;
+}

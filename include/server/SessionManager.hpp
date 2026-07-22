@@ -69,9 +69,22 @@ public:
     size_t sessionCount() const { return registries_.size(); }
     size_t occupancy(int sessionId) const { return registries_[sessionId].activeCount(); }
 
+    // Task D4: frees `conn`'s slot in whichever session it belongs to (its
+    // session keeps existing - a disconnect isn't a game-over - just its
+    // occupancy drops by one) so a later reconnect can tryAdd() a new hdl
+    // back in without hitting the capacity cap. False if conn wasn't
+    // tracked (already removed, or never added).
+    bool remove(const ConnectionId& conn) {
+        auto it = connectionToSession_.find(conn);
+        if (it == connectionToSession_.end()) return false;
+        registries_[it->second].remove(conn);
+        connectionToSession_.erase(it);
+        return true;
+    }
+
 private:
     size_t capacityPerSession_;
-    std::vector<ConnectionRegistry<ConnectionId>> registries_;
+    std::vector<ConnectionRegistry<ConnectionId, Compare>> registries_;
     std::map<ConnectionId, int, Compare> connectionToSession_;
 };
 #endif

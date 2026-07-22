@@ -65,6 +65,38 @@ TEST_CASE("connectionsIn returns a session's connections in insertion order") {
     CHECK(manager.connectionsIn(session) == std::vector<int>{10, 20});
 }
 
+// Task D4: remove() frees a disconnected connection's slot in whichever
+// session it belongs to (the session itself keeps existing) so a
+// reconnecting hdl can tryAdd() back in.
+
+TEST_CASE("remove frees a connection's slot and drops its session routing") {
+    SessionManager<int> manager(2);
+    int session = manager.createSession();
+    manager.tryAdd(session, 1);
+    manager.tryAdd(session, 2);
+
+    CHECK(manager.remove(1) == true);
+    CHECK(manager.occupancy(session) == 1);
+    CHECK(manager.sessionFor(1).has_value() == false);
+    CHECK(manager.connectionsIn(session) == std::vector<int>{2});
+}
+
+TEST_CASE("remove reports false for a connection that was never added") {
+    SessionManager<int> manager(2);
+    manager.createSession();
+    CHECK(manager.remove(999) == false);
+}
+
+TEST_CASE("a slot freed by remove can be reused up to capacity again") {
+    SessionManager<int> manager(2);
+    int session = manager.createSession();
+    manager.tryAdd(session, 1);
+    manager.tryAdd(session, 2);
+    manager.remove(1);
+    CHECK(manager.tryAdd(session, 3) == true); // slot freed - accepted now
+    CHECK(manager.sessionFor(3) == std::optional<int>(session));
+}
+
 TEST_CASE("independent sessions don't share capacity or connection lists") {
     SessionManager<int> manager(2);
     int sessionA = manager.createSession();

@@ -15,6 +15,7 @@
 #include <chrono>
 #include <fstream>
 #include <map>
+#include <utility>
 #include <vector>
 
 // Wires GameCommandParser (A2) + GameSession (A3) + GameStateSerializer
@@ -48,6 +49,25 @@
 //      `{"type":"matchmaking_timeout","error":"ERROR NO_OPPONENT_FOUND"}`.
 //   6. Once in a session: game commands route through GameCommandParser +
 //      GameSession::handleCommand(), same as always.
+//
+// Task D4: disconnect/reconnect, layered onto the above without changing
+// it. If a connection inside an unfinished session's seat closes (socket
+// close/fail - onClose()), that seat is marked disconnected
+// (GameSession::markDisconnected), its hdl is freed from SessionManager
+// (so a reconnect can tryAdd() back in), and a 20s steady_timer starts
+// (same real-elapsed-time-measuring pattern as D3's 60s matchmaking
+// timeout). Every broadcastState() tick in the meantime carries that
+// seat's remaining ms (GameStateSerializer::DisconnectStatus) so the
+// still-connected opponent's client can render a countdown - no separate
+// per-second broadcast loop. If `{"type":"join",...}` re-authenticates as
+// that same username before the timer fires (tryReconnect(), called from
+// handleLogin()), the seat is marked reconnected and the timer cancelled;
+// otherwise the timer's callback resigns that color
+// (GameEngine::resign()) and the game ends exactly like a king capture
+// would. A connection that closes while only queued in matchmakingQueue_
+// (not yet matched into a session) is just dequeued - D4's reconnect
+// support is specifically for a game already in progress, not the search
+// queue, which already has its own independent 60s give-up timeout (D3).
 //
 // Task C3: Database/UserRepository/AuthService stay process-wide, not
 // per-session - data/kungfu_chess.db, created by server/main.cpp before
@@ -107,6 +127,14 @@ private:
         std::unique_ptr<asio::steady_timer> timer;
     };
 
+    // Task D4: one seat currently disconnected and counting down toward
+    // auto-resign. disconnectedAt is real wall-clock time, same
+    // don't-trust-the-nominal-timer-value reasoning as QueuedSeeker above.
+    struct DisconnectedSeat {
+        std::chrono::steady_clock::time_point disconnectedAt;
+        std::unique_ptr<asio::steady_timer> timer;
+    };
+
     uint16_t port_;
     server_t server_;
     // Opened before logger_ (member init order = declaration order) so the
@@ -146,12 +174,26 @@ private:
     std::map<int, QueuedSeeker> queuedSeekers_;
     std::map<websocketpp::connection_hdl, int, hdl_compare> hdlToSeekerId_;
 
+    // Task D4: which session a username is (or was last) matched into -
+    // populated in handleMatch() alongside sessions_/sessionManager_, and
+    // consulted on a later login to decide "is this a fresh matchmaking
+    // login, or a reconnect into a game already in progress". Never
+    // erased (mirrors SessionManager's own no-removeSession() stance -
+    // sessions aren't torn down once created); reconnect eligibility is
+    // gated on the seat actually being marked disconnected AND the game
+    // not already being over, not on map membership alone.
+    std::map<std::string, int> usernameToSessionId_;
+    // Task D4: disconnected seats currently counting down toward
+    // auto-resign, keyed by (sessionId, color).
+    std::map<std::pair<int, char>, DisconnectedSeat> disconnectedSeats_;
+
     // Creates a new session: SessionManager bookkeeping plus the actual
     // GameSession (logger attached, standard board loaded). Only ever
     // called from handleMatch() - see the class comment above.
     int createSession();
 
     void onOpen(websocketpp::connection_hdl hdl);
+    void onClose(websocketpp::connection_hdl hdl);
     void onMessage(websocketpp::connection_hdl hdl, server_t::message_ptr msg);
     void scheduleTick();
     // Broadcasts one session's state to only that session's own
@@ -165,6 +207,20 @@ private:
     void handlePlay(websocketpp::connection_hdl hdl);
     void handleMatch(int seekerIdA, int seekerIdB);
     void handleMatchmakingTimeout(int seekerId);
+
+    // Task D4: reconnect-vs-fresh-login branch, split out of handleLogin()
+    // once auth succeeds. True (and fully handled: hdl re-added to the
+    // session, seat marked reconnected, timer cancelled, response sent) if
+    // `username` owns a currently-disconnected seat in an unfinished game;
+    // false means the caller should fall through to the normal
+    // logged_in/matchmaking response.
+    bool tryReconnect(websocketpp::connection_hdl hdl, const std::string& username, int rating);
+    // Starts the 20s auto-resign countdown for sessionId's `color` seat.
+    void startDisconnectTimer(int sessionId, char color);
+    // Fires when a seat's 20s disconnect window elapses with no reconnect:
+    // resigns that color (GameEngine::resign, Task D4) and broadcasts the
+    // resulting game-over state.
+    void handleDisconnectTimeout(int sessionId, char color);
 
     // json param is a pre-serialized string, not nlohmann::json - keeps
     // nlohmann out of this header entirely, same convention

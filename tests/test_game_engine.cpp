@@ -353,3 +353,53 @@ TEST_CASE("a king capture fires a game-end lifecycle event with the winner") {
     CHECK(received[0].phase == "end");
     CHECK(received[0].result == "White Wins");
 }
+
+// Task D4: resign() is the disconnect-timeout auto-resign path's way of
+// ending a game - deliberately the exact same gameOver/result/
+// onGameLifecycle machinery a king capture already drives (see
+// applyCaptureEvents), so GameSnapshot::gameOver stays the one source of
+// truth regardless of *why* the game ended.
+
+TEST_CASE("resigning a color ends the game in favor of the other color") {
+    GameEngine engine;
+    engine.loadBoard({{"wR", "bK"}});
+
+    engine.resign('w');
+
+    auto snap = engine.snapshot();
+    CHECK(snap.gameOver == true);
+    CHECK(snap.result == "Black Wins");
+}
+
+TEST_CASE("resigning black reports White Wins") {
+    GameEngine engine;
+    engine.loadBoard({{"wR", "bK"}});
+
+    engine.resign('b');
+
+    CHECK(engine.snapshot().result == "White Wins");
+}
+
+TEST_CASE("resign fires a game-end lifecycle event with the winner") {
+    GameEngine engine;
+    engine.loadBoard({{"wR", "bK"}});
+    std::vector<GameLifecycleEvent> received;
+    engine.events().onGameLifecycle.subscribe(
+        [&received](const GameLifecycleEvent& e) { received.push_back(e); });
+
+    engine.resign('w');
+
+    REQUIRE(received.size() == 1);
+    CHECK(received[0].phase == "end");
+    CHECK(received[0].result == "Black Wins");
+}
+
+TEST_CASE("resign after the game already ended is a no-op") {
+    GameEngine engine;
+    engine.loadBoard({{"wR", "bK"}});
+    engine.resign('w'); // Black Wins
+
+    engine.resign('b'); // should not overwrite the already-decided result
+
+    CHECK(engine.snapshot().result == "Black Wins");
+}

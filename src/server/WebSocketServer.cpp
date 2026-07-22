@@ -3,6 +3,7 @@
 #include "GameStateSerializer.hpp"
 #include "BoardParser.hpp"
 #include "MatchmakingTimeout.hpp"
+#include "DisconnectTimeout.hpp"
 #include <nlohmann/json.hpp>
 #include <iomanip>
 #include <iostream>
@@ -93,6 +94,49 @@ void WebSocketServer::onOpen(websocketpp::connection_hdl) {
     std::cout << "connection accepted" << std::endl;
 }
 
+void WebSocketServer::onClose(websocketpp::connection_hdl hdl) {
+    // Case 1: was queued in matchmaking, never matched - just dequeue.
+    // D4's reconnect support is specifically for a game already in
+    // progress (see the class comment); the search queue already has its
+    // own independent 60s give-up timeout (D3), unaffected by this.
+    auto seekerIt = hdlToSeekerId_.find(hdl);
+    if (seekerIt != hdlToSeekerId_.end()) {
+        int seekerId = seekerIt->second;
+        matchmakingQueue_.remove(seekerId);
+        auto qIt = queuedSeekers_.find(seekerId);
+        if (qIt != queuedSeekers_.end()) {
+            qIt->second.timer->cancel();
+            queuedSeekers_.erase(qIt);
+        }
+        hdlToSeekerId_.erase(seekerIt);
+    }
+
+    // Case 2: was in a session - start the 20s auto-resign countdown.
+    // Both lookups have to succeed to know *which seat*: sessionManager_
+    // for the session id, authenticatedUsers_ for the username
+    // GameSession itself is keyed on (colorOf() needs a username, not an
+    // hdl - see GameSession.hpp's class comment for why it doesn't know
+    // about connection_hdl at all).
+    auto sessionIdOpt = sessionManager_.sessionFor(hdl);
+    auto authIt = authenticatedUsers_.find(hdl);
+    if (sessionIdOpt && authIt != authenticatedUsers_.end()) {
+        int sessionId = *sessionIdOpt;
+        GameSession& session = *sessions_[sessionId];
+        char color = session.colorOf(authIt->second.username);
+        // gameOver guard: a connection closing right after the game
+        // already ended (win/resign) is just a client tearing down its
+        // socket, not a mid-game disconnect - nothing to count down.
+        if (color != '\0' && !session.engine().snapshot().gameOver) {
+            session.markDisconnected(color);
+            sessionManager_.remove(hdl);
+            startDisconnectTimer(sessionId, color);
+            broadcastState(sessionId);
+        }
+    }
+
+    authenticatedUsers_.erase(hdl);
+}
+
 void WebSocketServer::sendJson(websocketpp::connection_hdl hdl, const std::string& json) {
     // A connection can die between the moment we decide to send and the
     // actual send() call - an uncaught websocketpp::exception here would
@@ -112,8 +156,46 @@ void WebSocketServer::handleLogin(websocketpp::connection_hdl hdl, const std::st
         sendJson(hdl, nlohmann::json{{"type", "join_rejected"}, {"error", result.error}}.dump());
         return;
     }
+    // Task D4: a re-login as a username that currently owns a
+    // disconnected seat in an unfinished game resumes that game instead
+    // of starting a fresh logged_in/matchmaking flow.
+    if (tryReconnect(hdl, username, result.user.rating)) return;
     authenticatedUsers_[hdl] = {username, result.user.rating};
     sendJson(hdl, nlohmann::json{{"type", "logged_in"}, {"username", username}}.dump());
+}
+
+bool WebSocketServer::tryReconnect(websocketpp::connection_hdl hdl, const std::string& username, int rating) {
+    auto sessIt = usernameToSessionId_.find(username);
+    if (sessIt == usernameToSessionId_.end()) return false;
+
+    int sessionId = sessIt->second;
+    GameSession& session = *sessions_[sessionId];
+    char color = session.colorOf(username);
+    if (color == '\0') return false; // shouldn't happen - defensive, mirrors assignSeat()'s own stance
+    // Game already decided (win, resign, or a prior auto-resign) - this is
+    // a fresh login, not a reconnect into anything still playable.
+    if (session.engine().snapshot().gameOver) return false;
+    // Seat's own connection never actually dropped (e.g. a stray extra
+    // "join" message) - nothing to reconnect.
+    if (session.isConnected(color)) return false;
+
+    if (!sessionManager_.tryAdd(sessionId, hdl)) return false;
+
+    authenticatedUsers_[hdl] = {username, rating};
+    session.markReconnected(color);
+
+    auto seatIt = disconnectedSeats_.find({sessionId, color});
+    if (seatIt != disconnectedSeats_.end()) {
+        seatIt->second.timer->cancel();
+        disconnectedSeats_.erase(seatIt);
+    }
+
+    std::string opponent = session.usernameFor(color == 'w' ? 'b' : 'w');
+    sendJson(hdl, nlohmann::json{
+        {"type", "reconnected"}, {"color", colorName(color)}, {"username", username}, {"opponent", opponent}
+    }.dump());
+    broadcastState(sessionId);
+    return true;
 }
 
 void WebSocketServer::handlePlay(websocketpp::connection_hdl hdl) {
@@ -181,6 +263,10 @@ void WebSocketServer::handleMatch(int seekerIdA, int seekerIdB) {
     int sessionId = createSession();
     sessionManager_.tryAdd(sessionId, hdlA);
     sessionManager_.tryAdd(sessionId, hdlB);
+    // Task D4: remembered so a later re-login as userA/userB can be
+    // recognized as a reconnect into this game (see tryReconnect()).
+    usernameToSessionId_[userA] = sessionId;
+    usernameToSessionId_[userB] = sessionId;
 
     JoinResult resultA = sessions_[sessionId]->assignSeat(userA);
     JoinResult resultB = sessions_[sessionId]->assignSeat(userB);
@@ -205,6 +291,31 @@ void WebSocketServer::handleMatchmakingTimeout(int seekerId) {
     hdlToSeekerId_.erase(hdl);
 
     sendJson(hdl, nlohmann::json{{"type", "matchmaking_timeout"}, {"error", "ERROR NO_OPPONENT_FOUND"}}.dump());
+}
+
+void WebSocketServer::startDisconnectTimer(int sessionId, char color) {
+    DisconnectedSeat seat;
+    seat.disconnectedAt = std::chrono::steady_clock::now();
+    seat.timer = std::make_unique<asio::steady_timer>(server_.get_io_service());
+    seat.timer->expires_after(std::chrono::milliseconds(DisconnectTimeout::kTimeoutMs));
+    seat.timer->async_wait([this, sessionId, color](const asio::error_code& ec) {
+        if (ec) return; // cancelled - reconnected before timing out (see tryReconnect())
+        auto it = disconnectedSeats_.find({sessionId, color});
+        if (it == disconnectedSeats_.end()) return;
+        int elapsedMs = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - it->second.disconnectedAt).count());
+        bool stillDisconnected = !sessions_[sessionId]->isConnected(color);
+        if (DisconnectTimeout::shouldAutoResign(elapsedMs, stillDisconnected)) {
+            handleDisconnectTimeout(sessionId, color);
+        }
+    });
+    disconnectedSeats_[{sessionId, color}] = std::move(seat);
+}
+
+void WebSocketServer::handleDisconnectTimeout(int sessionId, char color) {
+    disconnectedSeats_.erase({sessionId, color});
+    sessions_[sessionId]->engine().resign(color);
+    broadcastState(sessionId);
 }
 
 void WebSocketServer::onMessage(websocketpp::connection_hdl hdl, server_t::message_ptr msg) {
@@ -260,17 +371,33 @@ void WebSocketServer::onMessage(websocketpp::connection_hdl hdl, server_t::messa
 }
 
 void WebSocketServer::broadcastState(int sessionId) {
-    std::string state = GameStateSerializer::serialize(sessions_[sessionId]->engine().snapshot());
+    // Task D4: per-color remaining disconnect ms, recomputed from real
+    // elapsed time every call (same steady_clock-based measurement D3's
+    // matchmaking timeout uses) rather than trusting a stored nominal
+    // value - present only for a seat actually mid-countdown right now.
+    GameStateSerializer::DisconnectStatus disconnectStatus;
+    auto now = std::chrono::steady_clock::now();
+    auto remainingMs = [&](char color) -> std::optional<int> {
+        auto it = disconnectedSeats_.find({sessionId, color});
+        if (it == disconnectedSeats_.end()) return std::nullopt;
+        int elapsedMs = static_cast<int>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(now - it->second.disconnectedAt).count());
+        int remaining = DisconnectTimeout::kTimeoutMs - elapsedMs;
+        return remaining > 0 ? remaining : 0;
+    };
+    disconnectStatus.whiteRemainingMs = remainingMs('w');
+    disconnectStatus.blackRemainingMs = remainingMs('b');
+
+    std::string state = GameStateSerializer::serialize(sessions_[sessionId]->engine().snapshot(), disconnectStatus);
     for (const auto& hdl : sessionManager_.connectionsIn(sessionId)) {
-        // A connection can die between ticks (client process killed,
-        // network drop) before we hear about it - send() throws in that
-        // case. SessionManager/ConnectionRegistry has no remove() yet
-        // (that's Task D4's proper disconnect-handling job, not this one),
-        // so a dead handle just keeps failing silently here on every
-        // subsequent tick. That's an acceptable gap for A5's scope; an
-        // *uncaught* exception taking down the whole server process over
-        // one dead connection is not - confirmed by a real crash during
-        // manual testing, not a guess.
+        // Normally onClose() (Task D4) removes a dead hdl from
+        // sessionManager_ before the next tick, so this loop shouldn't see
+        // one - but websocketpp's close/fail handlers firing is not
+        // instantaneous with the underlying socket actually dying, so a
+        // send() here can still race a handle that's about to close. Keep
+        // the try/catch as defense in depth (a real crash during A5
+        // manual testing is what put it here originally) rather than
+        // trusting handler ordering.
         try {
             server_.send(hdl, state, websocketpp::frame::opcode::text);
         } catch (const websocketpp::exception&) {
@@ -315,6 +442,16 @@ void WebSocketServer::run() {
     server_.set_message_handler([this](websocketpp::connection_hdl hdl, server_t::message_ptr msg) {
         onMessage(hdl, msg);
     });
+    // Task D4: the only way a socket going away was previously observed
+    // was a failed send() on the next broadcast tick (silently swallowed,
+    // see broadcastState()) - no code ever ran *at* disconnect time. Both
+    // route to the same handler: close is a clean disconnect, fail is a
+    // connection that never completed the WS handshake or died before
+    // close - onClose() itself is a no-op for any hdl it doesn't
+    // recognize (never authenticated, never queued, never in a session),
+    // so treating both alike here is safe.
+    server_.set_close_handler([this](websocketpp::connection_hdl hdl) { onClose(hdl); });
+    server_.set_fail_handler([this](websocketpp::connection_hdl hdl) { onClose(hdl); });
 
     tickTimer_ = std::make_unique<asio::steady_timer>(server_.get_io_service());
     lastTickTime_ = std::chrono::steady_clock::now();

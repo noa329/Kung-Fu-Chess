@@ -55,6 +55,14 @@ void GameEngine::pruneCaptureFlashes() {
     }
 }
 
+void GameEngine::resign(char color) {
+    if (gameOver) return;
+    gameOver = true;
+    winnerColor_ = (color == 'w') ? 'b' : 'w';
+    std::string result = (winnerColor_ == 'w') ? "White Wins" : "Black Wins";
+    events_.onGameLifecycle.publish({"end", result});
+}
+
 void GameEngine::startGame(const std::vector<std::vector<std::string>>& grid) {
     loadBoard(grid);
     events_.onGameLifecycle.publish({"start", ""});

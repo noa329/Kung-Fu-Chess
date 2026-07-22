@@ -91,10 +91,33 @@ TEST_CASE("serialize emits exactly the approved field set, nothing more") {
     std::sort(keys.begin(), keys.end());
 
     std::vector<std::string> expected = {
-        "blackMoves", "blackScore", "board", "cellStates",
-        "gameOver", "result", "whiteMoves", "whiteScore"
+        "blackDisconnectMs", "blackMoves", "blackScore", "board", "cellStates",
+        "gameOver", "result", "whiteDisconnectMs", "whiteMoves", "whiteScore"
     };
     std::sort(expected.begin(), expected.end());
 
     CHECK(keys == expected);
+}
+
+// Task D4: per-color disconnect countdown, present only while that color
+// is actually mid-countdown - see GameStateSerializer.hpp's
+// DisconnectStatus comment for why this isn't part of GameSnapshot
+// itself (connection-layer state, not game state).
+
+TEST_CASE("serialize reports null disconnect fields when no one is disconnected") {
+    auto snap = makeTestSnapshot();
+    json j = json::parse(GameStateSerializer::serialize(snap)); // default DisconnectStatus - both nullopt
+
+    CHECK(j.at("whiteDisconnectMs").is_null());
+    CHECK(j.at("blackDisconnectMs").is_null());
+}
+
+TEST_CASE("serialize reports the remaining ms for whichever color is disconnected") {
+    auto snap = makeTestSnapshot();
+    GameStateSerializer::DisconnectStatus disconnect;
+    disconnect.blackRemainingMs = 12345;
+    json j = json::parse(GameStateSerializer::serialize(snap, disconnect));
+
+    CHECK(j.at("whiteDisconnectMs").is_null());
+    CHECK(j.at("blackDisconnectMs") == 12345);
 }

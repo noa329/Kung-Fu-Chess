@@ -34,3 +34,32 @@ TEST_CASE("a zero-capacity registry rejects everything") {
     CHECK(registry.tryAdd(1) == false);
     CHECK(registry.activeCount() == 0);
 }
+
+// Task D4: remove() frees a disconnected connection's slot so a
+// reconnecting one can tryAdd() back in without hitting the capacity cap.
+
+TEST_CASE("remove frees a connection's slot") {
+    ConnectionRegistry<int> registry(2);
+    registry.tryAdd(1);
+    registry.tryAdd(2);
+    CHECK(registry.remove(1) == true);
+    CHECK(registry.activeCount() == 1);
+    CHECK(registry.connections() == std::vector<int>{2});
+}
+
+TEST_CASE("remove reports false for a connection that was never added") {
+    ConnectionRegistry<int> registry(2);
+    registry.tryAdd(1);
+    CHECK(registry.remove(999) == false);
+    CHECK(registry.activeCount() == 1);
+}
+
+TEST_CASE("a slot freed by remove can be reused up to capacity again") {
+    ConnectionRegistry<int> registry(2);
+    registry.tryAdd(1);
+    registry.tryAdd(2);
+    CHECK(registry.tryAdd(3) == false); // full
+    registry.remove(1);
+    CHECK(registry.tryAdd(3) == true); // slot freed - accepted now
+    CHECK(registry.connections() == std::vector<int>{2, 3});
+}

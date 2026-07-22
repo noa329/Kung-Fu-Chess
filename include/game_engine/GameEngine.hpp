@@ -86,6 +86,15 @@ public:
     // engine.events().onX.subscribe(...) from the composition root.
     EventBus& events() { return events_; }
 
+    // Ends the game immediately in favor of the other color, same
+    // gameOver/winnerColor_/onGameLifecycle("end", ...) path a king capture
+    // already drives (applyCaptureEvents) - so GameSnapshot::gameOver stays
+    // the one source of truth regardless of *why* the game ended. Used by
+    // the server's disconnect-timeout auto-resign (Task D4); a no-op if the
+    // game already ended (mirrors select()/jump()'s own `if (gameOver)
+    // return;` guard).
+    void resign(char color);
+
     void setPlayerNames(const std::string& whiteName, const std::string& blackName);
     void setRestDurations(long long longRestMs, long long shortRestMs);
     const std::string& getWhiteName() const { return whiteName_; }

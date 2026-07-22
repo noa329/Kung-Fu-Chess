@@ -67,6 +67,14 @@ class GameSession {
     bool blackJoined_ = false;
     std::string whiteUsername_;
     std::string blackUsername_;
+    // Task D4: per-seat connection status. Defaults true - a seat only
+    // ever becomes disconnected via an explicit markDisconnected() call
+    // from WebSocketServer's close handler, never implicitly. Deliberately
+    // plain bools, not a shared "ConnectionState" enum: this is
+    // server-layer connection bookkeeping, not one of the board/animation
+    // states the project's strings-not-enums convention actually governs.
+    bool whiteConnected_ = true;
+    bool blackConnected_ = true;
 
     void logEvent(const std::string& message);
 
@@ -81,5 +89,22 @@ public:
     // class comment above for why authentication itself isn't this
     // class's job (or even reachable from here) any more.
     JoinResult assignSeat(const std::string& username);
+
+    // Task D4: which seat (if any) a username occupies in this session -
+    // '\0' if it's neither whiteUsername_ nor blackUsername_. Lets
+    // WebSocketServer turn "this hdl closed" (which it only knows a
+    // username for, via its own authenticatedUsers_) into "this session's
+    // white/black seat just disconnected" without GameSession needing to
+    // know about connection_hdl at all.
+    char colorOf(const std::string& username) const;
+    // The username occupying `color`'s seat, or "" if that seat isn't
+    // filled yet. Used by WebSocketServer's reconnect ack to report the
+    // opponent's name the same way handleMatch()'s original "joined"
+    // message does.
+    std::string usernameFor(char color) const;
+
+    void markDisconnected(char color);
+    void markReconnected(char color);
+    bool isConnected(char color) const;
 };
 #endif

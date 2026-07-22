@@ -26,7 +26,7 @@ json moveRecordsToJson(const std::vector<MoveRecord>& moves) {
 
 namespace GameStateSerializer {
 
-std::string serialize(const GameSnapshot& snapshot) {
+std::string serialize(const GameSnapshot& snapshot, const DisconnectStatus& disconnect) {
     json j;
     j["board"] = snapshot.boardTokens;
     j["cellStates"] = snapshot.cellStates;
@@ -36,6 +36,8 @@ std::string serialize(const GameSnapshot& snapshot) {
     j["blackMoves"] = moveRecordsToJson(snapshot.blackMoves);
     j["gameOver"] = snapshot.gameOver;
     j["result"] = snapshot.result;
+    j["whiteDisconnectMs"] = disconnect.whiteRemainingMs ? json(*disconnect.whiteRemainingMs) : json(nullptr);
+    j["blackDisconnectMs"] = disconnect.blackRemainingMs ? json(*disconnect.blackRemainingMs) : json(nullptr);
     return j.dump();
 }
 
