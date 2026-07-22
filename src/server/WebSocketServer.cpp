@@ -67,24 +67,43 @@ WebSocketServer::WebSocketServer(uint16_t port)
       database_("data/kungfu_chess.db"),
       userRepository_(database_),
       authService_(userRepository_),
-      registry_(kMaxConnections) {
+      sessionManager_(kMaxConnectionsPerSession) {
     // logFile_.is_open() can be false (e.g. no write permission in the
     // working directory) - Logger's sink list just omits it rather than
     // failing startup over a log file, console logging still works.
-    session_.attachLogger(logger_);
     userRepository_.ensureSchema(); // idempotent - safe every startup
-    session_.attachAuthService(authService_);
-    session_.engine().startGame(loadStartingPosition());
+    // Task D1: exactly one session at startup, same observable shape as
+    // A5 - see the class comment in WebSocketServer.hpp for why this
+    // doesn't auto-create more as connections arrive.
+    createSession();
+}
+
+int WebSocketServer::createSession() {
+    int id = sessionManager_.createSession();
+    auto session = std::make_unique<GameSession>();
+    session->attachLogger(logger_);
+    session->attachAuthService(authService_);
+    session->engine().startGame(loadStartingPosition());
+    sessions_.push_back(std::move(session));
+    return id;
 }
 
 void WebSocketServer::onOpen(websocketpp::connection_hdl hdl) {
-    if (!registry_.tryAdd(hdl)) {
-        std::cout << "rejecting connection - session full" << std::endl;
-        server_.close(hdl, websocketpp::close::status::try_again_later, "session full");
-        return;
+    for (size_t sessionId = 0; sessionId < sessions_.size(); ++sessionId) {
+        if (sessionManager_.tryAdd(static_cast<int>(sessionId), hdl)) {
+            std::cout << "connection accepted to session " << sessionId << " ("
+                       << sessionManager_.occupancy(static_cast<int>(sessionId)) << "/"
+                       << kMaxConnectionsPerSession << ")" << std::endl;
+            broadcastState(static_cast<int>(sessionId));
+            return;
+        }
     }
-    std::cout << "connection accepted (" << registry_.activeCount() << "/" << kMaxConnections << ")" << std::endl;
-    broadcastState();
+    // Every existing session is already full. Task D1 deliberately does
+    // not create a new one here - see the class comment in
+    // WebSocketServer.hpp for why (spectator support/matchmaking, not yet
+    // designed, should decide what an overflow connection does).
+    std::cout << "rejecting connection - all sessions full" << std::endl;
+    server_.close(hdl, websocketpp::close::status::try_again_later, "session full");
 }
 
 void WebSocketServer::sendJson(websocketpp::connection_hdl hdl, const std::string& json) {
@@ -99,7 +118,7 @@ void WebSocketServer::sendJson(websocketpp::connection_hdl hdl, const std::strin
     }
 }
 
-bool WebSocketServer::tryHandleJoin(websocketpp::connection_hdl hdl, const std::string& payload) {
+bool WebSocketServer::tryHandleJoin(websocketpp::connection_hdl hdl, int sessionId, const std::string& payload) {
     nlohmann::json j;
     try {
         j = nlohmann::json::parse(payload);
@@ -115,7 +134,7 @@ bool WebSocketServer::tryHandleJoin(websocketpp::connection_hdl hdl, const std::
         return true;
     }
 
-    JoinResult result = session_.handleJoin(username, password);
+    JoinResult result = sessions_[sessionId]->handleJoin(username, password);
     if (!result.ok) {
         sendJson(hdl, nlohmann::json{{"type", "join_rejected"}, {"error", result.error}}.dump());
         return true;
@@ -127,8 +146,12 @@ bool WebSocketServer::tryHandleJoin(websocketpp::connection_hdl hdl, const std::
     }.dump());
 
     if (result.hasOpponent) {
-        for (const auto& [otherHdl, otherColor] : hdlToColor_) {
-            if (otherColor != result.color) {
+        // Only this session's own connections - not every connection on
+        // the server (Task D1: hdlToColor_ stays a single flat map, but
+        // the search space is now scoped via sessionManager_.connectionsIn()).
+        for (const auto& otherHdl : sessionManager_.connectionsIn(sessionId)) {
+            auto it = hdlToColor_.find(otherHdl);
+            if (it != hdlToColor_.end() && it->second != result.color) {
                 sendJson(otherHdl, nlohmann::json{{"type", "opponent_joined"}, {"username", username}}.dump());
                 break;
             }
@@ -138,12 +161,16 @@ bool WebSocketServer::tryHandleJoin(websocketpp::connection_hdl hdl, const std::
 }
 
 void WebSocketServer::onMessage(websocketpp::connection_hdl hdl, server_t::message_ptr msg) {
+    auto sessionIdOpt = sessionManager_.sessionFor(hdl);
+    if (!sessionIdOpt) return; // shouldn't happen - onOpen() always assigns a session first
+    int sessionId = *sessionIdOpt;
+
     const std::string& payload = msg->get_payload();
-    if (tryHandleJoin(hdl, payload)) return;
+    if (tryHandleJoin(hdl, sessionId, payload)) return;
 
     auto parsed = GameCommandParser::parse(payload);
     if (parsed.ok) {
-        auto result = session_.handleCommand(parsed.command);
+        auto result = sessions_[sessionId]->handleCommand(parsed.command);
         if (!result.ok) {
             std::cout << "rejected command: " << payload << " (" << result.error << ")" << std::endl;
         }
@@ -160,20 +187,21 @@ void WebSocketServer::onMessage(websocketpp::connection_hdl hdl, server_t::messa
         logger_.log("malformed command: \"" + escapeForLog(payload) + "\" ("
                      + std::to_string(payload.size()) + " bytes) (" + parsed.error + ")");
     }
-    broadcastState();
+    broadcastState(sessionId);
 }
 
-void WebSocketServer::broadcastState() {
-    std::string state = GameStateSerializer::serialize(session_.engine().snapshot());
-    for (const auto& hdl : registry_.connections()) {
+void WebSocketServer::broadcastState(int sessionId) {
+    std::string state = GameStateSerializer::serialize(sessions_[sessionId]->engine().snapshot());
+    for (const auto& hdl : sessionManager_.connectionsIn(sessionId)) {
         // A connection can die between ticks (client process killed,
         // network drop) before we hear about it - send() throws in that
-        // case. ConnectionRegistry has no remove() yet (that's Task D4's
-        // proper disconnect-handling job, not this one), so a dead handle
-        // just keeps failing silently here on every subsequent tick. That's
-        // an acceptable gap for A5's scope; an *uncaught* exception taking
-        // down the whole server process over one dead connection is not -
-        // confirmed by a real crash during manual testing, not a guess.
+        // case. SessionManager/ConnectionRegistry has no remove() yet
+        // (that's Task D4's proper disconnect-handling job, not this one),
+        // so a dead handle just keeps failing silently here on every
+        // subsequent tick. That's an acceptable gap for A5's scope; an
+        // *uncaught* exception taking down the whole server process over
+        // one dead connection is not - confirmed by a real crash during
+        // manual testing, not a guess.
         try {
             server_.send(hdl, state, websocketpp::frame::opcode::text);
         } catch (const websocketpp::exception&) {
@@ -190,8 +218,14 @@ void WebSocketServer::scheduleTick() {
         int elapsedMs = static_cast<int>(
             std::chrono::duration_cast<std::chrono::milliseconds>(now - lastTickTime_).count());
         lastTickTime_ = now;
-        session_.engine().wait(elapsedMs);
-        broadcastState();
+        // Task D1: every session ticks and broadcasts independently, all
+        // still on this one thread (single-threaded io_context, no worker
+        // threads - the concurrency model this task is confirmed to build
+        // on, not a new one).
+        for (size_t sessionId = 0; sessionId < sessions_.size(); ++sessionId) {
+            sessions_[sessionId]->engine().wait(elapsedMs);
+            broadcastState(static_cast<int>(sessionId));
+        }
         scheduleTick();
     });
 }
