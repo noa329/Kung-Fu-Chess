@@ -8,13 +8,21 @@
 // board at the origin square (fail on mismatch) - anything past that
 // (shape/path/timing legality) is GameEngine's own silent-no-op behavior,
 // unchanged, same as a click through Controller today.
+//
+// Task E2: handleCommand() now takes the sender's username too, and
+// authorizes by their actual assigned color (join()'d once, not re-derived
+// from the command) before any board-state check - see GameSession.hpp's
+// comment on handleCommand() for the full reasoning. Every test below that
+// isn't specifically testing that authorization join()s a matching-color
+// username first, so it reaches the same board-level check it always did.
 
 TEST_CASE("a correctly-matched move command schedules and resolves the move") {
     GameSession session;
     session.engine().loadBoard({{"wR", ".", "."}});
+    session.join("Alice"); // White
 
     ParsedCommand cmd{false, 'w', 'R', Position{0, 0}, Position{0, 2}};
-    auto result = session.handleCommand(cmd);
+    auto result = session.handleCommand("Alice", cmd);
     REQUIRE(result.ok);
 
     session.engine().wait(2000);
@@ -25,9 +33,10 @@ TEST_CASE("a correctly-matched move command schedules and resolves the move") {
 TEST_CASE("a correctly-matched jump command schedules the jump") {
     GameSession session;
     session.engine().loadBoard({{"wR", ".", "."}});
+    session.join("Alice"); // White
 
     ParsedCommand cmd{true, 'w', 'R', Position{0, 0}, Position{}};
-    auto result = session.handleCommand(cmd);
+    auto result = session.handleCommand("Alice", cmd);
     REQUIRE(result.ok);
 
     auto snap = session.engine().snapshot();
@@ -37,9 +46,10 @@ TEST_CASE("a correctly-matched jump command schedules the jump") {
 TEST_CASE("a command naming an empty square is rejected without mutating engine state") {
     GameSession session;
     session.engine().loadBoard({{"wR", ".", "."}});
+    session.join("Alice"); // White
 
     ParsedCommand cmd{false, 'w', 'R', Position{0, 1}, Position{0, 2}};
-    auto result = session.handleCommand(cmd);
+    auto result = session.handleCommand("Alice", cmd);
     CHECK(result.ok == false);
     CHECK(result.error == "ERROR NO_PIECE_AT_SQUARE");
 
@@ -51,9 +61,10 @@ TEST_CASE("a command naming an empty square is rejected without mutating engine 
 TEST_CASE("a command with a mismatched piece letter is rejected without mutating engine state") {
     GameSession session;
     session.engine().loadBoard({{"wR", ".", "."}});
+    session.join("Alice"); // White
 
     ParsedCommand cmd{false, 'w', 'Q', Position{0, 0}, Position{0, 2}};
-    auto result = session.handleCommand(cmd);
+    auto result = session.handleCommand("Alice", cmd);
     CHECK(result.ok == false);
     CHECK(result.error == "ERROR PIECE_MISMATCH");
 
@@ -65,9 +76,14 @@ TEST_CASE("a command with a mismatched piece letter is rejected without mutating
 TEST_CASE("a command with a mismatched color is rejected without mutating engine state") {
     GameSession session;
     session.engine().loadBoard({{"wR", ".", "."}});
+    session.join("Alice"); // White
+    session.join("Bob");   // Black
 
+    // Bob (Black) legitimately claims Black in the command - authorization
+    // passes - but the board square he's naming actually holds a white
+    // rook, so this is still rejected, just at the board-check stage.
     ParsedCommand cmd{false, 'b', 'R', Position{0, 0}, Position{0, 2}};
-    auto result = session.handleCommand(cmd);
+    auto result = session.handleCommand("Bob", cmd);
     CHECK(result.ok == false);
     CHECK(result.error == "ERROR COLOR_MISMATCH");
 
@@ -79,9 +95,10 @@ TEST_CASE("a command with a mismatched color is rejected without mutating engine
 TEST_CASE("a command whose origin square is out of bounds is rejected") {
     GameSession session;
     session.engine().loadBoard({{"wR", ".", "."}});
+    session.join("Alice"); // White
 
     ParsedCommand cmd{false, 'w', 'R', Position{99, 99}, Position{0, 2}};
-    auto result = session.handleCommand(cmd);
+    auto result = session.handleCommand("Alice", cmd);
     CHECK(result.ok == false);
     CHECK(result.error == "ERROR NO_PIECE_AT_SQUARE");
 }
@@ -92,14 +109,84 @@ TEST_CASE("an illegal-shape move is accepted by validation but silently not sche
     // clicking a piece then clicking its own square via Controller.
     GameSession session;
     session.engine().loadBoard({{"wR", ".", "."}});
+    session.join("Alice"); // White
 
     ParsedCommand cmd{false, 'w', 'R', Position{0, 0}, Position{0, 0}};
-    auto result = session.handleCommand(cmd);
+    auto result = session.handleCommand("Alice", cmd);
     CHECK(result.ok == true); // validation passed - GameEngine silently declines the move itself
 
     session.engine().wait(2000);
     auto snap = session.engine().snapshot();
     CHECK(snap.boardTokens == std::vector<std::vector<std::string>>{{"wR", ".", "."}});
+}
+
+// Task E2: identity-based authorization itself - the point of this task
+// is that a spectator or an impersonating player is rejected by *who they
+// are*, not just by whether their claimed color happens to match the
+// board (which any connection can satisfy by simply claiming whichever
+// color is actually on the square).
+
+TEST_CASE("a spectator's command is rejected without mutating engine state") {
+    GameSession session;
+    session.engine().loadBoard({{"wR", ".", "."}});
+    session.join("Alice"); // White
+    session.join("Bob");   // Black
+    session.join("Carol"); // spectator
+
+    ParsedCommand cmd{false, 'w', 'R', Position{0, 0}, Position{0, 2}};
+    auto result = session.handleCommand("Carol", cmd);
+    CHECK(result.ok == false);
+    CHECK(result.error == "ERROR NOT_A_PLAYER");
+
+    auto snap = session.engine().snapshot();
+    CHECK(snap.boardTokens == std::vector<std::vector<std::string>>{{"wR", ".", "."}});
+}
+
+TEST_CASE("a command from a username that never joined this session is rejected the same way") {
+    GameSession session;
+    session.engine().loadBoard({{"wR", ".", "."}});
+    session.join("Alice"); // White
+
+    ParsedCommand cmd{false, 'w', 'R', Position{0, 0}, Position{0, 2}};
+    auto result = session.handleCommand("Eve", cmd);
+    CHECK(result.ok == false);
+    CHECK(result.error == "ERROR NOT_A_PLAYER");
+}
+
+TEST_CASE("a player claiming the opponent's color is rejected by identity, not just the board") {
+    GameSession session;
+    session.engine().loadBoard({{"wR", "bN", "."}});
+    session.join("Alice"); // White
+    session.join("Bob");   // Black
+
+    // Bob's connection (Black) sends a command CLAIMING White's rook - the
+    // claimed color even matches what's genuinely on that square, so the
+    // old board-only check would have let this straight through. Only an
+    // identity check catches it.
+    ParsedCommand cmd{false, 'w', 'R', Position{0, 0}, Position{0, 2}};
+    auto result = session.handleCommand("Bob", cmd);
+    CHECK(result.ok == false);
+    CHECK(result.error == "ERROR NOT_YOUR_COLOR");
+
+    auto snap = session.engine().snapshot();
+    CHECK(snap.boardTokens == std::vector<std::vector<std::string>>{{"wR", "bN", "."}}); // untouched
+}
+
+TEST_CASE("each player can only command their own color") {
+    GameSession session;
+    session.engine().loadBoard({{"wR", "bN", "."}});
+    session.join("Alice"); // White
+    session.join("Bob");   // Black
+
+    ParsedCommand whiteMove{false, 'w', 'R', Position{0, 0}, Position{0, 0}};
+    CHECK(session.handleCommand("Alice", whiteMove).ok == true);
+
+    ParsedCommand blackMove{false, 'b', 'N', Position{0, 1}, Position{0, 1}};
+    CHECK(session.handleCommand("Bob", blackMove).ok == true);
+
+    // Cross-claims are both rejected.
+    CHECK(session.handleCommand("Alice", blackMove).ok == false);
+    CHECK(session.handleCommand("Bob", whiteMove).ok == false);
 }
 
 // Task A6: GameSession subscribes engine_.events() to an optional Logger,
@@ -112,8 +199,9 @@ TEST_CASE("without attachLogger, a move produces no log output") {
     Logger logger({&sink});
     GameSession session; // no attachLogger call
     session.engine().loadBoard({{"wR", ".", "."}});
+    session.join("Alice"); // White
 
-    session.handleCommand(ParsedCommand{false, 'w', 'R', Position{0, 0}, Position{0, 2}});
+    session.handleCommand("Alice", ParsedCommand{false, 'w', 'R', Position{0, 0}, Position{0, 2}});
 
     CHECK(sink.str().empty());
 }
@@ -124,8 +212,9 @@ TEST_CASE("after attachLogger, a move logs color/notation") {
     GameSession session;
     session.attachLogger(logger);
     session.engine().loadBoard({{"wR", ".", "."}});
+    session.join("Alice"); // White
 
-    session.handleCommand(ParsedCommand{false, 'w', 'R', Position{0, 0}, Position{0, 2}});
+    session.handleCommand("Alice", ParsedCommand{false, 'w', 'R', Position{0, 0}, Position{0, 2}});
 
     std::string log = sink.str();
     CHECK(log.find("move") != std::string::npos);
@@ -139,8 +228,9 @@ TEST_CASE("after attachLogger, a jump logs a sound event") {
     GameSession session;
     session.attachLogger(logger);
     session.engine().loadBoard({{"wR", ".", "."}});
+    session.join("Alice"); // White
 
-    session.handleCommand(ParsedCommand{true, 'w', 'R', Position{0, 0}, Position{}});
+    session.handleCommand("Alice", ParsedCommand{true, 'w', 'R', Position{0, 0}, Position{}});
 
     CHECK(sink.str().find("sound name=jump") != std::string::npos);
 }
@@ -151,8 +241,9 @@ TEST_CASE("after attachLogger, a resolved capture logs a score update") {
     GameSession session;
     session.attachLogger(logger);
     session.engine().loadBoard({{"wR", "bN", "."}});
+    session.join("Alice"); // White
 
-    session.handleCommand(ParsedCommand{false, 'w', 'R', Position{0, 0}, Position{0, 1}});
+    session.handleCommand("Alice", ParsedCommand{false, 'w', 'R', Position{0, 0}, Position{0, 1}});
     session.engine().wait(1000); // resolve the capture
 
     std::string log = sink.str();
@@ -166,8 +257,9 @@ TEST_CASE("after attachLogger, a king capture logs a lifecycle end with the resu
     GameSession session;
     session.attachLogger(logger);
     session.engine().loadBoard({{"wR", "bK"}});
+    session.join("Alice"); // White
 
-    session.handleCommand(ParsedCommand{false, 'w', 'R', Position{0, 0}, Position{0, 1}});
+    session.handleCommand("Alice", ParsedCommand{false, 'w', 'R', Position{0, 0}, Position{0, 1}});
     session.engine().wait(1000);
 
     std::string log = sink.str();

@@ -332,7 +332,16 @@ void WebSocketServer::onMessage(websocketpp::connection_hdl hdl, server_t::messa
         int sessionId = *sessionIdOpt;
         auto parsed = GameCommandParser::parse(payload);
         if (parsed.ok) {
-            auto result = sessions_[sessionId]->handleCommand(parsed.command);
+            // Task E2: handleCommand() now authorizes by sender identity,
+            // not just the command's own claimed color - it needs to know
+            // who actually sent this. A session-tracked hdl always has an
+            // authenticatedUsers_ entry (login happens before matching/
+            // room-join/reconnect ever adds it to sessionManager_), so the
+            // empty-string fallback is defensive only, mirroring
+            // tryReconnect()'s own "shouldn't happen" stance.
+            auto authIt = authenticatedUsers_.find(hdl);
+            std::string username = authIt != authenticatedUsers_.end() ? authIt->second.username : "";
+            auto result = sessions_[sessionId]->handleCommand(username, parsed.command);
             if (!result.ok) {
                 std::cout << "rejected command: " << payload << " (" << result.error << ")" << std::endl;
             }

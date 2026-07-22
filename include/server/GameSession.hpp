@@ -7,13 +7,14 @@
 #include <vector>
 
 // Result of GameSession::handleCommand - covers only the validation this
-// class is responsible for (is there a piece at the claimed square, does
-// its color/letter match the command). Anything past that (shape/path/
-// timing legality: illegal shape, blocked path, resting piece, pending
-// move) is GameEngine's own existing silent-no-op behavior via
-// select()/jump() - exactly the same as an illegal click through
-// Controller today. handleCommand does not, and cannot, report those as
-// errors, since GameEngine's public API has no return value for them.
+// class is responsible for (is the sender actually the player they're
+// claiming to command, is there a piece at the claimed square, does its
+// color/letter match the command). Anything past that (shape/path/timing
+// legality: illegal shape, blocked path, resting piece, pending move) is
+// GameEngine's own existing silent-no-op behavior via select()/jump() -
+// exactly the same as an illegal click through Controller today.
+// handleCommand does not, and cannot, report those as errors, since
+// GameEngine's public API has no return value for them.
 struct CommandResult {
     bool ok;
     std::string error; // set only when ok == false, e.g. "ERROR PIECE_MISMATCH"
@@ -97,7 +98,25 @@ public:
     GameEngine& engine() { return engine_; }
     void attachLogger(Logger& logger) { logger_ = &logger; }
 
-    CommandResult handleCommand(const ParsedCommand& cmd);
+    // Task E2: `username` is the identity of the connection that actually
+    // sent this command (resolved by WebSocketServer from the sending
+    // hdl, same as everywhere else GameSession takes a username instead
+    // of a connection_hdl - see the class comment above). `cmd.color` is
+    // only what the wire text *claims* - GameCommandParser has no way to
+    // know who sent it, so it can't be trusted on its own. This checks
+    // `colorOf(username)` (the seat this specific connection actually
+    // holds, established once at join() and never re-derived from the
+    // command itself) against `cmd.color` *before* any board-state check:
+    // a spectator (or an unjoined username) is rejected outright
+    // (`ERROR NOT_A_PLAYER`), and a real player claiming the *other*
+    // color - e.g. Black's own connection sending a White-claiming
+    // command, which would otherwise sail through the board check since
+    // the claimed color and the board's actual color could both
+    // legitimately be White - is rejected too (`ERROR NOT_YOUR_COLOR`).
+    // Without this, identity was never checked at all: only "does the
+    // claimed color match the board", which any connection could satisfy
+    // by simply claiming whichever color was actually on the square.
+    CommandResult handleCommand(const std::string& username, const ParsedCommand& cmd);
     // Assigns a role (White/Black/spectator) to an already-authenticated
     // username - see the class comment above for why authentication
     // itself isn't this class's job (or even reachable from here) any

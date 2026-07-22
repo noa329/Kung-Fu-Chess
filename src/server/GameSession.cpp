@@ -29,7 +29,11 @@ GameSession::GameSession() {
     });
 }
 
-CommandResult GameSession::handleCommand(const ParsedCommand& cmd) {
+CommandResult GameSession::handleCommand(const std::string& username, const ParsedCommand& cmd) {
+    char senderColor = colorOf(username);
+    if (senderColor == '\0') return fail("ERROR NOT_A_PLAYER");
+    if (senderColor != cmd.color) return fail("ERROR NOT_YOUR_COLOR");
+
     GameSnapshot snap = engine_.snapshot();
     int row = cmd.from.row;
     int col = cmd.from.col;
