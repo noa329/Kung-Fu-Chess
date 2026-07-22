@@ -4,6 +4,7 @@
 #include "GameCommandParser.hpp"
 #include "Logger.hpp"
 #include <string>
+#include <vector>
 
 // Result of GameSession::handleCommand - covers only the validation this
 // class is responsible for (is there a piece at the claimed square, does
@@ -19,29 +20,36 @@ struct CommandResult {
 };
 
 // Task B2: player-slot color assignment. First successful call gets
-// White, second gets Black. A third is rejected - structurally
-// unreachable in practice (Task D3: a GameSession is only ever created
-// for exactly two already-matched players - see WebSocketServer's
-// handleMatch()), but assignSeat() stays a safe, defined decision either
-// way rather than relying on that upstream guarantee, same defensive-
-// validation reasoning GameCommandParser's error taxonomy already
-// established.
+// White, second gets Black.
+//
+// Task E1: a third-and-later call no longer errors - it's a spectator.
+// GameSession is deliberately the *one* place that decision lives (not
+// duplicated between the matchmaking path and a room path): whether a
+// session came from being matched or from a room's join-by-ID, both ever
+// only call this same join(), so "1st=White, 2nd=Black, 3rd+=spectator"
+// is enforced exactly once regardless of how the session was created.
+// This is also why hasOpponent is always true for a spectator join - the
+// 3rd+ join can't happen until both seats are already filled.
 //
 // Task D3: authentication is no longer part of this at all.
 // GameSession::handleJoin(username, password) (Task C3) is gone -
 // authentication now happens exactly once, at login time, directly via
 // WebSocketServer's own AuthService, *before* any GameSession exists to
-// call it on (matchmaking is what decides which two already-authenticated
-// usernames end up sharing a session, and only then is one created). So
-// GameSession no longer knows about AuthService/passwords at all - see
-// assignSeat() below, which takes only an already-authenticated username.
+// call it on (matchmaking/room-join is what decides which already-
+// authenticated username ends up in which session, and only then is one
+// created). So GameSession no longer knows about AuthService/passwords at
+// all - see join() below, which takes only an already-authenticated
+// username.
 struct JoinResult {
     bool ok;
-    char color;       // 'w' | 'b', meaningful only when ok == true
-    bool hasOpponent; // true when the other color slot was already filled
-                      // before this call (i.e. this is the 2nd successful
-                      // seat assignment)
-    std::string error; // set only when ok == false, e.g. "ERROR SESSION_FULL"
+    char color;       // 'w' | 'b' | 's' (spectator), meaningful only when ok == true
+    bool hasOpponent; // true when both seats were already filled before
+                      // this call - always true for a spectator join (E1),
+                      // true for the 2nd seat assignment, false for the 1st
+    std::string error; // set only when ok == false - currently unreachable
+                        // (join() never rejects a call any more, see E1's
+                        // comment above), kept for API stability/symmetry
+                        // with the rest of this codebase's Result structs
 };
 
 // Owns one GameEngine (one concurrent game = one GameSession = one
@@ -67,6 +75,11 @@ class GameSession {
     bool blackJoined_ = false;
     std::string whiteUsername_;
     std::string blackUsername_;
+    // Task E1: 3rd+ joiners. No cap, no dedup by username (two joins of
+    // the same username - e.g. two browser tabs - are two independent
+    // spectator entries) - nothing in the deck asks for either, and nothing
+    // here currently needs to distinguish them from each other individually.
+    std::vector<std::string> spectatorUsernames_;
     // Task D4: per-seat connection status. Defaults true - a seat only
     // ever becomes disconnected via an explicit markDisconnected() call
     // from WebSocketServer's close handler, never implicitly. Deliberately
@@ -85,18 +98,30 @@ public:
     void attachLogger(Logger& logger) { logger_ = &logger; }
 
     CommandResult handleCommand(const ParsedCommand& cmd);
-    // Assigns a color to an already-authenticated username - see the
-    // class comment above for why authentication itself isn't this
-    // class's job (or even reachable from here) any more.
-    JoinResult assignSeat(const std::string& username);
+    // Assigns a role (White/Black/spectator) to an already-authenticated
+    // username - see the class comment above for why authentication
+    // itself isn't this class's job (or even reachable from here) any
+    // more, and why this is the one place both the matchmaking path and a
+    // room's join-by-ID path both call, rather than each having its own
+    // role-assignment logic.
+    JoinResult join(const std::string& username);
 
     // Task D4: which seat (if any) a username occupies in this session -
-    // '\0' if it's neither whiteUsername_ nor blackUsername_. Lets
+    // '\0' if it's neither whiteUsername_ nor blackUsername_ - notably
+    // '\0' for a spectator too, not just an absent username: colorOf()'s
+    // only consumer (WebSocketServer's disconnect-countdown machinery)
+    // needs "does this username hold a resignable seat", and a spectator
+    // doesn't, same as someone not in this session at all. Use
+    // isSpectator() below to tell those two '\0' cases apart. Lets
     // WebSocketServer turn "this hdl closed" (which it only knows a
     // username for, via its own authenticatedUsers_) into "this session's
     // white/black seat just disconnected" without GameSession needing to
     // know about connection_hdl at all.
     char colorOf(const std::string& username) const;
+    // Task E1: true if `username` joined as a spectator (3rd+ join) -
+    // see colorOf()'s comment above for why this is a separate query
+    // rather than folded into colorOf() itself.
+    bool isSpectator(const std::string& username) const;
     // The username occupying `color`'s seat, or "" if that seat isn't
     // filled yet. Used by WebSocketServer's reconnect ack to report the
     // opponent's name the same way handleMatch()'s original "joined"

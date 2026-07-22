@@ -55,7 +55,7 @@ CommandResult GameSession::handleCommand(const ParsedCommand& cmd) {
     return {true, ""};
 }
 
-JoinResult GameSession::assignSeat(const std::string& username) {
+JoinResult GameSession::join(const std::string& username) {
     if (!whiteJoined_) {
         whiteJoined_ = true;
         whiteUsername_ = username;
@@ -66,13 +66,21 @@ JoinResult GameSession::assignSeat(const std::string& username) {
         blackUsername_ = username;
         return {true, 'b', true, ""};
     }
-    return {false, ' ', false, "ERROR SESSION_FULL"};
+    spectatorUsernames_.push_back(username);
+    return {true, 's', true, ""};
 }
 
 char GameSession::colorOf(const std::string& username) const {
     if (whiteJoined_ && whiteUsername_ == username) return 'w';
     if (blackJoined_ && blackUsername_ == username) return 'b';
     return '\0';
+}
+
+bool GameSession::isSpectator(const std::string& username) const {
+    for (const auto& name : spectatorUsernames_) {
+        if (name == username) return true;
+    }
+    return false;
 }
 
 std::string GameSession::usernameFor(char color) const {

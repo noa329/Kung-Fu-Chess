@@ -173,7 +173,7 @@ bool WebSocketServer::tryReconnect(websocketpp::connection_hdl hdl, const std::s
     int sessionId = sessIt->second;
     GameSession& session = *sessions_[sessionId];
     char color = session.colorOf(username);
-    if (color == '\0') return false; // shouldn't happen - defensive, mirrors assignSeat()'s own stance
+    if (color == '\0') return false; // shouldn't happen - defensive, mirrors join()'s own stance
     // Game already decided (win, resign, or a prior auto-resign) - this is
     // a fresh login, not a reconnect into anything still playable.
     if (session.engine().snapshot().gameOver) return false;
@@ -272,8 +272,8 @@ void WebSocketServer::handleMatch(int seekerIdA, int seekerIdB) {
     usernameToSessionId_[userA] = sessionId;
     usernameToSessionId_[userB] = sessionId;
 
-    JoinResult resultA = sessions_[sessionId]->assignSeat(userA);
-    JoinResult resultB = sessions_[sessionId]->assignSeat(userB);
+    JoinResult resultA = sessions_[sessionId]->join(userA);
+    JoinResult resultB = sessions_[sessionId]->join(userB);
 
     sendJson(hdlA, nlohmann::json{
         {"type", "joined"}, {"color", colorName(resultA.color)}, {"username", userA}, {"opponent", userB}

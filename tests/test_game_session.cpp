@@ -182,35 +182,71 @@ TEST_CASE("after attachLogger, a king capture logs a lifecycle end with the resu
 //
 // Task D3: authentication is no longer part of this at all - it happens
 // once, at login time, directly via WebSocketServer's own AuthService,
-// before any GameSession exists to call it on. assignSeat() takes only an
+// before any GameSession exists to call it on. join() takes only an
 // already-authenticated username - see GameSession.hpp's class comment
 // for the full reasoning. (AuthService's own accept/reject decision is
 // tested independently in test_auth_service.cpp, unaffected by this.)
 
-TEST_CASE("the first seat assigned is White with no opponent yet") {
+TEST_CASE("the first join is White with no opponent yet") {
     GameSession session;
-    auto result = session.assignSeat("Alice");
+    auto result = session.join("Alice");
     CHECK(result.ok);
     CHECK(result.color == 'w');
     CHECK(result.hasOpponent == false);
 }
 
-TEST_CASE("the second seat assigned is Black and reports the opponent is present") {
+TEST_CASE("the second join is Black and reports the opponent is present") {
     GameSession session;
-    session.assignSeat("Alice");
-    auto result = session.assignSeat("Bob");
+    session.join("Alice");
+    auto result = session.join("Bob");
     CHECK(result.ok);
     CHECK(result.color == 'b');
     CHECK(result.hasOpponent == true);
 }
 
-TEST_CASE("a third seat assignment is rejected") {
+// Task E1: a 3rd+ join is a spectator, not an error - both seats already
+// being filled is exactly what makes a join the 3rd+ one, so hasOpponent
+// is always true for a spectator result (see GameSession.hpp's comment).
+
+TEST_CASE("a third join is a spectator, not a rejection") {
     GameSession session;
-    session.assignSeat("Alice");
-    session.assignSeat("Bob");
-    auto result = session.assignSeat("Carol");
-    CHECK(result.ok == false);
-    CHECK(result.error == "ERROR SESSION_FULL");
+    session.join("Alice");
+    session.join("Bob");
+    auto result = session.join("Carol");
+    CHECK(result.ok == true);
+    CHECK(result.color == 's');
+    CHECK(result.hasOpponent == true);
+}
+
+TEST_CASE("a fourth (and later) join is also a spectator") {
+    GameSession session;
+    session.join("Alice");
+    session.join("Bob");
+    session.join("Carol");
+    auto result = session.join("Dave");
+    CHECK(result.ok == true);
+    CHECK(result.color == 's');
+}
+
+TEST_CASE("isSpectator reports true only for usernames that joined as spectators") {
+    GameSession session;
+    session.join("Alice");
+    session.join("Bob");
+    session.join("Carol");
+    CHECK(session.isSpectator("Carol") == true);
+    CHECK(session.isSpectator("Alice") == false); // White, not a spectator
+    CHECK(session.isSpectator("Bob") == false);   // Black, not a spectator
+    CHECK(session.isSpectator("Eve") == false);   // never joined at all
+}
+
+TEST_CASE("multiple spectators are each tracked independently") {
+    GameSession session;
+    session.join("Alice");
+    session.join("Bob");
+    session.join("Carol");
+    session.join("Dave");
+    CHECK(session.isSpectator("Carol") == true);
+    CHECK(session.isSpectator("Dave") == true);
 }
 
 // Task D4: colorOf()/usernameFor() let WebSocketServer translate between
@@ -220,21 +256,35 @@ TEST_CASE("a third seat assignment is rejected") {
 
 TEST_CASE("colorOf reports the seat a known username occupies") {
     GameSession session;
-    session.assignSeat("Alice");
-    session.assignSeat("Bob");
+    session.join("Alice");
+    session.join("Bob");
     CHECK(session.colorOf("Alice") == 'w');
     CHECK(session.colorOf("Bob") == 'b');
 }
 
 TEST_CASE("colorOf reports the null char for an unknown username") {
     GameSession session;
-    session.assignSeat("Alice");
+    session.join("Alice");
     CHECK(session.colorOf("Carol") == '\0');
+}
+
+// Task E1: colorOf() deliberately does NOT distinguish "never joined" from
+// "joined as a spectator" - both report '\0', since colorOf()'s only
+// consumer only cares about resignable seats. isSpectator() is the query
+// for telling those two cases apart (see GameSession.hpp's comment).
+
+TEST_CASE("colorOf reports the null char for a spectator too, not a color") {
+    GameSession session;
+    session.join("Alice");
+    session.join("Bob");
+    session.join("Carol");
+    CHECK(session.colorOf("Carol") == '\0');
+    CHECK(session.isSpectator("Carol") == true); // proves it's the spectator case, not "unknown"
 }
 
 TEST_CASE("usernameFor reports the username occupying a seat, empty if unfilled") {
     GameSession session;
-    session.assignSeat("Alice");
+    session.join("Alice");
     CHECK(session.usernameFor('w') == "Alice");
     CHECK(session.usernameFor('b') == "");
 }
@@ -246,14 +296,14 @@ TEST_CASE("usernameFor reports the username occupying a seat, empty if unfilled"
 
 TEST_CASE("a freshly assigned seat starts out connected") {
     GameSession session;
-    session.assignSeat("Alice");
+    session.join("Alice");
     CHECK(session.isConnected('w') == true);
 }
 
 TEST_CASE("markDisconnected/markReconnected flip only the given seat's status") {
     GameSession session;
-    session.assignSeat("Alice");
-    session.assignSeat("Bob");
+    session.join("Alice");
+    session.join("Bob");
 
     session.markDisconnected('w');
     CHECK(session.isConnected('w') == false);

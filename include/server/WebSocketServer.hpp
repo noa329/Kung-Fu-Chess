@@ -43,8 +43,10 @@
 //      "username":...,"opponent":...}` - matching is atomic now (both
 //      players known at the same moment), so the old B2-era
 //      `opponent_joined` notification and the hdlToColor_ map it needed
-//      are both gone; GameSession::assignSeat() is called directly with
-//      each username, not GameSession::handleJoin() (removed).
+//      are both gone; GameSession::join() (renamed from assignSeat() at
+//      Task E1, once join() also started handling 3rd+ joins as
+//      spectators) is called directly with each username, not
+//      GameSession::handleJoin() (removed).
 //   5. On a 60s timeout with no match: dequeued, sent
 //      `{"type":"matchmaking_timeout","error":"ERROR NO_OPPONENT_FOUND"}`.
 //   6. Once in a session: game commands route through GameCommandParser +
