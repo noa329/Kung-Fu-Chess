@@ -2,6 +2,7 @@
 .vscode/
 .idea/
 .DS_Store
+.claude/
 
 # --- קבצי הרצה ו-Build ---
 # קבצי הרצה ותוצרי קומפילציה
