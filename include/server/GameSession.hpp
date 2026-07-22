@@ -3,6 +3,7 @@
 #include "GameEngine.hpp"
 #include "GameCommandParser.hpp"
 #include "Logger.hpp"
+#include "AuthService.hpp"
 #include <string>
 
 // Result of GameSession::handleCommand - covers only the validation this
@@ -25,9 +26,12 @@ struct CommandResult {
 // before any message ever reaches here), but handleJoin() stays a safe,
 // defined decision either way rather than relying on that upstream
 // guarantee, same defensive-validation reasoning GameCommandParser's error
-// taxonomy already established. Username-only, no password/identity
-// verification - Task C3's AuthService supersedes this join flow once
-// login/register exists.
+// taxonomy already established.
+//
+// Task C3: color assignment now happens only *after* AuthService accepts
+// the username/password - see handleJoin() below. error covers both
+// reasons now: "ERROR SESSION_FULL" (unchanged from B2) and whatever
+// AuthService::authenticate() rejected with (e.g. "ERROR AUTH_FAILED").
 struct JoinResult {
     bool ok;
     char color;       // 'w' | 'b', meaningful only when ok == true
@@ -57,6 +61,15 @@ struct JoinResult {
 class GameSession {
     GameEngine engine_;
     Logger* logger_ = nullptr;
+    // Task C3: not optional in real production use (WebSocketServer always
+    // attaches a real one) - but kept as an optional-attach pointer, same
+    // pattern as logger_, so every pre-existing GameSession()-default-
+    // constructing test that never calls handleJoin() at all (the
+    // handleCommand/logger tests) keeps working unchanged. Unlike logger_'s
+    // silent-no-op-when-absent default, handleJoin() fails *closed*
+    // (ERROR AUTH_NOT_CONFIGURED) when authService_ is null - "no auth
+    // configured" must never silently mean "let everyone in".
+    AuthService* authService_ = nullptr;
     bool whiteJoined_ = false;
     bool blackJoined_ = false;
     std::string whiteUsername_;
@@ -69,8 +82,12 @@ public:
 
     GameEngine& engine() { return engine_; }
     void attachLogger(Logger& logger) { logger_ = &logger; }
+    void attachAuthService(AuthService& auth) { authService_ = &auth; }
 
     CommandResult handleCommand(const ParsedCommand& cmd);
-    JoinResult handleJoin(const std::string& username);
+    // Authenticates via AuthService (auto-register on a never-seen-before
+    // username, per C4) before any color assignment happens - see
+    // AuthService::authenticate() for the accept/reject decision itself.
+    JoinResult handleJoin(const std::string& username, const std::string& password);
 };
 #endif

@@ -59,11 +59,16 @@ WebSocketServer::WebSocketServer(uint16_t port)
       logFile_("server.log", std::ios::app),
       logger_(logFile_.is_open() ? std::vector<std::ostream*>{&std::cout, &logFile_}
                                   : std::vector<std::ostream*>{&std::cout}),
+      database_("data/kungfu_chess.db"),
+      userRepository_(database_),
+      authService_(userRepository_),
       registry_(kMaxConnections) {
     // logFile_.is_open() can be false (e.g. no write permission in the
     // working directory) - Logger's sink list just omits it rather than
     // failing startup over a log file, console logging still works.
     session_.attachLogger(logger_);
+    userRepository_.ensureSchema(); // idempotent - safe every startup
+    session_.attachAuthService(authService_);
     session_.engine().startGame(standardStartingPosition());
 }
 
@@ -99,12 +104,13 @@ bool WebSocketServer::tryHandleJoin(websocketpp::connection_hdl hdl, const std::
     if (!j.is_object() || j.value("type", "") != "join") return false;
 
     std::string username = j.value("username", "");
-    if (username.empty()) {
+    std::string password = j.value("password", "");
+    if (username.empty() || password.empty()) {
         sendJson(hdl, nlohmann::json{{"type", "join_rejected"}, {"error", "ERROR MALFORMED_JOIN"}}.dump());
         return true;
     }
 
-    JoinResult result = session_.handleJoin(username);
+    JoinResult result = session_.handleJoin(username, password);
     if (!result.ok) {
         sendJson(hdl, nlohmann::json{{"type", "join_rejected"}, {"error", result.error}}.dump());
         return true;

@@ -6,6 +6,9 @@
 #include "GameSession.hpp"
 #include "ConnectionRegistry.hpp"
 #include "Logger.hpp"
+#include "Database.hpp"
+#include "UserRepository.hpp"
+#include "AuthService.hpp"
 #include <cstdint>
 #include <memory>
 #include <chrono>
@@ -26,6 +29,13 @@
 //   -> joining client on success:  {"type":"joined","color":"white"|"black","username":"..."}
 //   -> joining client on reject:   {"type":"join_rejected","error":"ERROR ..."}
 //   -> existing opponent (if any): {"type":"opponent_joined","username":"..."}
+//
+// Task C3: the join message now also carries "password" (auto-register on
+// a never-seen-before username, per the resolved C4 open question - see
+// AuthService). Owns the real Database/UserRepository/AuthService for this
+// process - data/kungfu_chess.db, created by server/main.cpp before this
+// class is constructed (SQLite can create the .db file itself but not a
+// missing parent directory).
 //
 // This is the one place in server/ that touches websocketpp/Asio
 // directly, so unlike GameCommandParser/GameSession/GameStateSerializer
@@ -69,6 +79,14 @@ private:
     // lifetime), hence this exact declaration order.
     std::ofstream logFile_;
     Logger logger_;
+    // Declaration order matters: database_ must outlive userRepository_'s
+    // reference to it, userRepository_ must outlive authService_'s
+    // reference to it, and both must exist before session_.
+    // attachAuthService() is called in the constructor body (same pattern
+    // attachLogger() already uses).
+    Database database_;
+    UserRepository userRepository_;
+    AuthService authService_;
     GameSession session_;
     ConnectionRegistry<websocketpp::connection_hdl> registry_;
     std::unique_ptr<asio::steady_timer> tickTimer_;

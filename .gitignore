@@ -46,3 +46,6 @@ third_party/websocketpp/
 
 # --- לוגים בזמן ריצה ---
 server.log
+
+# --- Task C3: runtime SQLite DB, not source ---
+data/
