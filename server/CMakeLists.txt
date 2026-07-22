@@ -87,6 +87,11 @@ file(GLOB SERVER_LAYER_SOURCES
     "${MAIN_PROJECT_ROOT}/src/server/*.cpp"
 )
 
+# BoardParser only (not BoardPrinter - the server never prints a board) -
+# WebSocketServer.cpp uses it to load boards/standard.txt instead of a
+# hardcoded starting-position literal.
+set(TEXT_IO_SOURCES "${MAIN_PROJECT_ROOT}/src/text_io/BoardParser.cpp")
+
 # logging/ (Task A6) - shared by server/ and, later, the shell client
 # (Phase F). Also dual-compiled into run_tests.exe; no websocketpp/Asio
 # dependency.
@@ -120,6 +125,7 @@ add_executable(kungfu_server
     ${SERVER_LAYER_SOURCES}
     ${LOGGING_SOURCES}
     ${PERSISTENCE_SOURCES}
+    ${TEXT_IO_SOURCES}
     # sqlite3.c: vendored C amalgamation (third_party/sqlite, see
     # third_party/README.md), needed by persistence/Database.cpp. Compiled
     # as C via CMake's automatic per-file language detection (.c vs .cpp),
@@ -141,6 +147,7 @@ target_include_directories(kungfu_server PRIVATE
     "${MAIN_PROJECT_ROOT}/include/server"
     "${MAIN_PROJECT_ROOT}/include/logging"
     "${MAIN_PROJECT_ROOT}/include/persistence"
+    "${MAIN_PROJECT_ROOT}/include/text_io"
     "${MAIN_PROJECT_ROOT}/third_party/nlohmann"
     "${MAIN_PROJECT_ROOT}/third_party/sqlite"
     "${MAIN_PROJECT_ROOT}/third_party/sha256"

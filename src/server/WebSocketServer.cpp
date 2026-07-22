@@ -1,10 +1,12 @@
 #include "WebSocketServer.hpp"
 #include "GameCommandParser.hpp"
 #include "GameStateSerializer.hpp"
+#include "BoardParser.hpp"
 #include <nlohmann/json.hpp>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 
 namespace {
 
@@ -36,21 +38,24 @@ std::string escapeForLog(const std::string& raw) {
     return out.str();
 }
 
-// Same literal as kungfu-graphics/cpp/src/main.cpp's
-// standardStartingPosition() - duplicated rather than shared, since the
-// two entry points don't otherwise share a "board setup" layer and this
-// is an 8-line literal, not worth introducing a dependency for.
-std::vector<std::vector<std::string>> standardStartingPosition() {
-    return {
-        {"bR", "bN", "bB", "bQ", "bK", "bB", "bN", "bR"},
-        {"bP", "bP", "bP", "bP", "bP", "bP", "bP", "bP"},
-        {".",  ".",  ".",  ".",  ".",  ".",  ".",  "."},
-        {".",  ".",  ".",  ".",  ".",  ".",  ".",  "."},
-        {".",  ".",  ".",  ".",  ".",  ".",  ".",  "."},
-        {".",  ".",  ".",  ".",  ".",  ".",  ".",  "."},
-        {"wP", "wP", "wP", "wP", "wP", "wP", "wP", "wP"},
-        {"wR", "wN", "wB", "wQ", "wK", "wB", "wN", "wR"},
-    };
+// Cwd-relative, same convention as data/kungfu_chess.db and server.log
+// below - the server is expected to run from the repo root. Loaded via
+// BoardParser (text_io) instead of a hardcoded literal so this doesn't
+// duplicate kungfu-graphics/cpp/src/main.cpp's starting position.
+const std::string kBoardPath = "boards/standard.txt";
+
+std::vector<std::vector<std::string>> loadStartingPosition() {
+    std::ifstream boardFile(kBoardPath);
+    if (!boardFile.is_open()) {
+        throw std::runtime_error("Failed to open starting position file \"" + kBoardPath +
+                                  "\" (run the server from the repo root).");
+    }
+    BoardParseResult result = BoardParser::parse(boardFile);
+    if (!result.ok || result.tokens.empty()) {
+        throw std::runtime_error("Failed to parse starting position from \"" + kBoardPath + "\": " +
+                                  (result.ok ? "file has no board rows" : result.error));
+    }
+    return result.tokens;
 }
 } // namespace
 
@@ -69,7 +74,7 @@ WebSocketServer::WebSocketServer(uint16_t port)
     session_.attachLogger(logger_);
     userRepository_.ensureSchema(); // idempotent - safe every startup
     session_.attachAuthService(authService_);
-    session_.engine().startGame(standardStartingPosition());
+    session_.engine().startGame(loadStartingPosition());
 }
 
 void WebSocketServer::onOpen(websocketpp::connection_hdl hdl) {

@@ -5,8 +5,17 @@
 #include "Controller.hpp"
 #include "RestDurationLoader.hpp"
 #include "SoundManager.hpp"
+#include "BoardParser.hpp"
+#include <fstream>
 #include <iostream>
 #include <opencv2/opencv.hpp>
+
+// Cwd-relative, same convention as the server's "data/kungfu_chess.db" and
+// "server.log" (see WebSocketServer.cpp) - run the .exe from the repo root.
+// Deliberately not a KUNGFU_*_ROOT compile define like ASSETS_ROOT/
+// SOUNDS_ROOT below: making the board path launch-directory-independent too
+// is a separate, broader robustness task, out of scope here.
+static const std::string BOARD_PATH = "boards/standard.txt";
 
 // Set by CMake to an absolute path to the kungfu-graphics folder (contains
 // board.png, pieces1/, pieces2/) - see target_compile_definitions in
@@ -36,19 +45,6 @@ static const std::string MUSIC_RELATIVE_PATH = "background_music.wav";
 static const float MUSIC_VOLUME = 0.5f;
 
 namespace {
-
-std::vector<std::vector<std::string>> standardStartingPosition() {
-    return {
-        {"bR", "bN", "bB", "bQ", "bK", "bB", "bN", "bR"},
-        {"bP", "bP", "bP", "bP", "bP", "bP", "bP", "bP"},
-        {".",  ".",  ".",  ".",  ".",  ".",  ".",  "."},
-        {".",  ".",  ".",  ".",  ".",  ".",  ".",  "."},
-        {".",  ".",  ".",  ".",  ".",  ".",  ".",  "."},
-        {".",  ".",  ".",  ".",  ".",  ".",  ".",  "."},
-        {"wP", "wP", "wP", "wP", "wP", "wP", "wP", "wP"},
-        {"wR", "wN", "wB", "wQ", "wK", "wB", "wN", "wR"},
-    };
-}
 
 struct MouseContext {
     Controller* controller;
@@ -86,8 +82,22 @@ int main() {
             return 1;
         }
 
+        std::ifstream boardFile(BOARD_PATH);
+        if (!boardFile.is_open()) {
+            std::cerr << "Failed to open starting position file \"" << BOARD_PATH
+                      << "\". Run the executable from the repo root." << std::endl;
+            return 1;
+        }
+        BoardParseResult boardResult = BoardParser::parse(boardFile);
+        if (!boardResult.ok || boardResult.tokens.empty()) {
+            std::cerr << "Failed to parse starting position from \"" << BOARD_PATH << "\": "
+                      << (boardResult.ok ? "file has no board rows" : boardResult.error)
+                      << std::endl;
+            return 1;
+        }
+
         GameEngine engine;
-        engine.startGame(standardStartingPosition());
+        engine.startGame(boardResult.tokens);
 
         // Real long_rest/short_rest durations derived from PIECE_SET's own
         // sprite config, replacing RealTimeArbiter's hardcoded 800/500ms

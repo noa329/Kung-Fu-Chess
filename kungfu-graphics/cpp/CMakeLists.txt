@@ -30,7 +30,12 @@ file(GLOB ENGINE_SOURCES
     "${MAIN_PROJECT_ROOT}/src/audio/*.cpp"
 )
 
-set(SOURCES ${LOCAL_SOURCES} ${RENDERER_SOURCES} ${ENGINE_SOURCES})
+# BoardParser only (not BoardPrinter - this build never prints a board) -
+# main.cpp uses it to load boards/standard.txt instead of a hardcoded
+# starting-position literal.
+set(TEXT_IO_SOURCES "${MAIN_PROJECT_ROOT}/src/text_io/BoardParser.cpp")
+
+set(SOURCES ${LOCAL_SOURCES} ${RENDERER_SOURCES} ${ENGINE_SOURCES} ${TEXT_IO_SOURCES})
 set(HEADERS ${LOCAL_HEADERS})
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
@@ -53,6 +58,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     "${MAIN_PROJECT_ROOT}/include/game_engine"
     "${MAIN_PROJECT_ROOT}/include/audio"
     "${MAIN_PROJECT_ROOT}/include/event_bus"
+    "${MAIN_PROJECT_ROOT}/include/text_io"
     "${MAIN_PROJECT_ROOT}/third_party/miniaudio"
 )
 
