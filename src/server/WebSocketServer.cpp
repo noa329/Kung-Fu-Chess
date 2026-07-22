@@ -131,6 +131,8 @@ void WebSocketServer::onClose(websocketpp::connection_hdl hdl) {
             sessionManager_.remove(hdl);
             startDisconnectTimer(sessionId, color);
             broadcastState(sessionId);
+            logger_.log("disconnect session=" + std::to_string(sessionId) + " color=" + std::string(1, color)
+                         + " username=" + authIt->second.username + " - 20s auto-resign countdown started");
         }
     }
 
@@ -195,6 +197,8 @@ bool WebSocketServer::tryReconnect(websocketpp::connection_hdl hdl, const std::s
         {"type", "reconnected"}, {"color", colorName(color)}, {"username", username}, {"opponent", opponent}
     }.dump());
     broadcastState(sessionId);
+    logger_.log("reconnect session=" + std::to_string(sessionId) + " color=" + std::string(1, color)
+                 + " username=" + username + " - countdown cancelled");
     return true;
 }
 
@@ -316,6 +320,8 @@ void WebSocketServer::handleDisconnectTimeout(int sessionId, char color) {
     disconnectedSeats_.erase({sessionId, color});
     sessions_[sessionId]->engine().resign(color);
     broadcastState(sessionId);
+    logger_.log("auto-resign session=" + std::to_string(sessionId) + " color=" + std::string(1, color)
+                 + " - 20s disconnect window elapsed with no reconnect");
 }
 
 void WebSocketServer::onMessage(websocketpp::connection_hdl hdl, server_t::message_ptr msg) {

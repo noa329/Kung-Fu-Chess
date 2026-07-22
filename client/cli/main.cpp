@@ -118,6 +118,11 @@ struct LoginState {
     // Populated only once matched ("joined") - meaningless before then.
     std::string color;
     std::string opponent;
+    // Task D4: true only when the login response was "reconnected" (not
+    // "logged_in") - tells main() to skip the "play"/matchmaking step
+    // entirely and go straight into the gameplay loop, since the server
+    // already resumed an in-progress session.
+    bool reconnected = false;
 };
 
 void handleServerMessage(const std::string& payload, LoginState& login) {
@@ -143,6 +148,24 @@ void handleServerMessage(const std::string& payload, LoginState& login) {
         std::lock_guard<std::mutex> lock(login.mtx);
         login.ok = false;
         login.error = j.value("error", "unknown error");
+        login.responsePending = false;
+        login.cv.notify_all();
+    } else if (type == "reconnected") {
+        // Task D4: the server resumed an in-progress session for this
+        // username's seat instead of starting a fresh login - same
+        // color/opponent shape as "joined", but no matchmaking follows.
+        std::string color = j.value("color", "");
+        std::string opponent = j.value("opponent", "?");
+        std::ostringstream out;
+        out << "Reconnected as " << (color == "white" ? "White" : "Black")
+            << ". Playing against " << opponent << ".\n";
+        enqueueOutput(out.str());
+
+        std::lock_guard<std::mutex> lock(login.mtx);
+        login.ok = true;
+        login.color = color;
+        login.opponent = opponent;
+        login.reconnected = true;
         login.responsePending = false;
         login.cv.notify_all();
     } else if (type == "searching") {
@@ -283,24 +306,35 @@ int main(int argc, char** argv) {
         if (accepted) break;
         std::cout << "Login failed (" << error << "). Try again." << std::endl;
     }
-    std::cout << "Logged in as " << username << "." << std::endl;
 
-    // Task D3: request a match. See the threading-model comment at the
-    // top of this file for why "Searching..." is printed here directly
-    // rather than via the server's "searching" ack.
-    std::cout << "Searching for an opponent..." << std::endl;
+    bool wasReconnect;
     {
         std::lock_guard<std::mutex> lock(login.mtx);
-        login.responsePending = true;
-    }
-    try {
-        client.send(hdl, nlohmann::json{{"type", "play"}}.dump(), websocketpp::frame::opcode::text);
-    } catch (const websocketpp::exception& e) {
-        std::cout << "failed to send play: " << e.what() << std::endl;
-        return shutdown(1);
+        wasReconnect = login.reconnected;
     }
 
-    {
+    // Task D4: a reconnect resumes an already-in-progress session (the
+    // "reconnected" branch above already set login.ok/color/opponent) -
+    // skip matchmaking entirely and fall straight through to the
+    // gameplay loop below, same as a freshly matched game would reach it.
+    if (!wasReconnect) {
+        std::cout << "Logged in as " << username << "." << std::endl;
+
+        // Task D3: request a match. See the threading-model comment at
+        // the top of this file for why "Searching..." is printed here
+        // directly rather than via the server's "searching" ack.
+        std::cout << "Searching for an opponent..." << std::endl;
+        {
+            std::lock_guard<std::mutex> lock(login.mtx);
+            login.responsePending = true;
+        }
+        try {
+            client.send(hdl, nlohmann::json{{"type", "play"}}.dump(), websocketpp::frame::opcode::text);
+        } catch (const websocketpp::exception& e) {
+            std::cout << "failed to send play: " << e.what() << std::endl;
+            return shutdown(1);
+        }
+
         std::unique_lock<std::mutex> lock(login.mtx);
         login.cv.wait(lock, [&login] { return !login.responsePending; });
         if (!login.ok) {
