@@ -18,6 +18,22 @@
   below: `UserRepository`'s doctest coverage runs under the plain
   Makefile/`run_tests.exe` build, which `FetchContent` can't reach, so
   this has to be a real committed file, not a CMake-fetched one.
+  **Genuine C, not C++** — see the build-system note further down for
+  why it's compiled with a real C compiler, not just dropped into the
+  normal C++ source list.
+- **`sha256/`** — `sha256.h` + `sha256.c`, Brad Conte's public-domain
+  SHA-256 implementation (from
+  [B-Con/crypto-algorithms](https://github.com/B-Con/crypto-algorithms),
+  commit `cfbde48414baacf51fc7c74f275190881f037d32` — "released into the
+  public domain free of any restrictions" per that repo's own README).
+  Used by `persistence/UserRepository` (Task C2) for password
+  salting/hashing. Unlike `sqlite3.c`, this compiles cleanly as C++
+  directly (confirmed with `-Wall -Wextra`, zero warnings) — it's
+  plain portable C with none of `sqlite3.c`'s implicit
+  `void*`-conversion reliance, so it's built as C++ in both the Makefile
+  and CMake builds (see the build-system note below for why that
+  actually needs a deliberate CMake override once C was enabled for
+  `sqlite3.c`).
 
 ## Fetched via CMake FetchContent (server build only)
 

@@ -16,12 +16,19 @@ OPENCV_ONLY_SRC := src/renderer/Board_view.cpp src/renderer/Piece_animator.cpp s
 # third_party/README.md) - everything else under src/server/ is pure logic
 # with no such dependency, so it stays in SOURCES and gets doctest coverage.
 SERVER_ONLY_SRC := src/server/WebSocketServer.cpp
-SOURCES = $(filter-out $(OPENCV_ONLY_SRC) $(SERVER_ONLY_SRC),$(ALL_SRC)) $(wildcard tests/*.cpp)
+# Task C2: sha256.c (vendored, third_party/sha256 - see third_party/README.md)
+# is plain, portable C with none of sqlite3.c's implicit void*-conversion
+# reliance - confirmed compiling cleanly under g++ in C++ mode (-Wall
+# -Wextra, zero warnings), unlike sqlite3.c. So unlike SQLITE_OBJ below, it
+# just goes straight into SOURCES and gets compiled the same way as every
+# .cpp file - no separate C-compiler step needed for this one.
+THIRD_PARTY_SRC := third_party/sha256/sha256.c
+SOURCES = $(filter-out $(OPENCV_ONLY_SRC) $(SERVER_ONLY_SRC),$(ALL_SRC)) $(THIRD_PARTY_SRC) $(wildcard tests/*.cpp)
 
 # נתיבי ה-include - כל תת-תיקייה בנפרד, כי ה-#include-ים בקוד
 # משתמשים בשמות קבצים בלבד (לא נתיב מלא). זה בכוונה, כדי שהקוד
 # יתקמפל גם במערכות שמשטחות קבצים (כמו VPL) וגם מקומית.
-INCLUDE_DIRS := $(shell find include -type d) $(shell find src -type d) third_party/miniaudio third_party/nlohmann third_party/sqlite
+INCLUDE_DIRS := $(shell find include -type d) $(shell find src -type d) third_party/miniaudio third_party/nlohmann third_party/sqlite third_party/sha256
 INCLUDES = $(addprefix -I,$(INCLUDE_DIRS))
 
 # miniaudio (used by src/audio/SoundManager.cpp, pulled in via GameEngine)

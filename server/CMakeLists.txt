@@ -100,6 +100,20 @@ file(GLOB PERSISTENCE_SOURCES
     "${MAIN_PROJECT_ROOT}/src/persistence/*.cpp"
 )
 
+# Task C2: sha256.c (vendored, third_party/sha256 - see third_party/README.md).
+# Unlike sqlite3.c, this is plain portable C with no implicit
+# void*-conversion reliance (confirmed compiling clean under g++ in C++
+# mode, -Wall -Wextra, zero warnings) - so it's meant to compile as C++
+# here too, same as the Makefile build does implicitly. But now that this
+# project has C enabled (for sqlite3.c, above), CMake's default per-file
+# language dispatch would compile *any* .c source - including this one -
+# with the C compiler instead, which would produce plain-C-linkage symbols
+# with no extern "C" wrapper in sha256.h to match them against C++ callers
+# (UserRepository.cpp). Force LANGUAGE CXX explicitly so both build systems
+# treat this file identically.
+set(SHA256_SRC "${MAIN_PROJECT_ROOT}/third_party/sha256/sha256.c")
+set_source_files_properties(${SHA256_SRC} PROPERTIES LANGUAGE CXX)
+
 add_executable(kungfu_server
     main.cpp
     ${ENGINE_SOURCES}
@@ -111,6 +125,7 @@ add_executable(kungfu_server
     # as C via CMake's automatic per-file language detection (.c vs .cpp),
     # same as any other .c source added to a CXX-language target.
     "${MAIN_PROJECT_ROOT}/third_party/sqlite/sqlite3.c"
+    ${SHA256_SRC}
 )
 
 target_include_directories(kungfu_server PRIVATE
@@ -128,6 +143,7 @@ target_include_directories(kungfu_server PRIVATE
     "${MAIN_PROJECT_ROOT}/include/persistence"
     "${MAIN_PROJECT_ROOT}/third_party/nlohmann"
     "${MAIN_PROJECT_ROOT}/third_party/sqlite"
+    "${MAIN_PROJECT_ROOT}/third_party/sha256"
 )
 
 target_compile_definitions(kungfu_server PRIVATE
