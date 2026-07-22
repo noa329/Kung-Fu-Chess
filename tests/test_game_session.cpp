@@ -1,7 +1,5 @@
 #include "doctest.h"
 #include "GameSession.hpp"
-#include "Database.hpp"
-#include "UserRepository.hpp"
 #include <sstream>
 
 // server layer: GameSession owns one GameEngine and turns an already-parsed
@@ -177,91 +175,40 @@ TEST_CASE("after attachLogger, a king capture logs a lifecycle end with the resu
     CHECK(log.find("result=White Wins") != std::string::npos);
 }
 
-// Task B2: join -> color assignment. Pure decision, decoupled from sockets/
-// JSON - the wire-format parsing/dispatch and response framing that turn
-// this into an actual `{"type":"join",...}` message live in
-// WebSocketServer.cpp (networking glue, manually verified instead, same
-// as the rest of A5).
+// Task B2: color assignment. Pure decision, decoupled from sockets/JSON -
+// the wire-format parsing/dispatch and response framing that turns this
+// into a real message live in WebSocketServer.cpp (networking glue,
+// manually verified instead, same as the rest of A5).
 //
-// Task C3: handleJoin() now authenticates via AuthService before any color
-// assignment - every test below attaches a real (":memory:") AuthService
-// first. A dedicated small helper (not a shared fixture) since every test
-// needs its own independent Database/UserRepository/AuthService, and
-// there's no shared setup worth factoring out beyond that.
+// Task D3: authentication is no longer part of this at all - it happens
+// once, at login time, directly via WebSocketServer's own AuthService,
+// before any GameSession exists to call it on. assignSeat() takes only an
+// already-authenticated username - see GameSession.hpp's class comment
+// for the full reasoning. (AuthService's own accept/reject decision is
+// tested independently in test_auth_service.cpp, unaffected by this.)
 
-namespace {
-struct AuthFixture {
-    Database db{":memory:"};
-    UserRepository users{db};
-    AuthService auth{users};
-
-    AuthFixture() { users.ensureSchema(); }
-};
-} // namespace
-
-TEST_CASE("the first join is assigned White with no opponent yet") {
-    AuthFixture fixture;
+TEST_CASE("the first seat assigned is White with no opponent yet") {
     GameSession session;
-    session.attachAuthService(fixture.auth);
-
-    auto result = session.handleJoin("Alice", "alices-password");
+    auto result = session.assignSeat("Alice");
     CHECK(result.ok);
     CHECK(result.color == 'w');
     CHECK(result.hasOpponent == false);
 }
 
-TEST_CASE("the second join is assigned Black and reports the opponent is present") {
-    AuthFixture fixture;
+TEST_CASE("the second seat assigned is Black and reports the opponent is present") {
     GameSession session;
-    session.attachAuthService(fixture.auth);
-
-    session.handleJoin("Alice", "alices-password");
-    auto result = session.handleJoin("Bob", "bobs-password");
+    session.assignSeat("Alice");
+    auto result = session.assignSeat("Bob");
     CHECK(result.ok);
     CHECK(result.color == 'b');
     CHECK(result.hasOpponent == true);
 }
 
-TEST_CASE("a third join is rejected") {
-    AuthFixture fixture;
+TEST_CASE("a third seat assignment is rejected") {
     GameSession session;
-    session.attachAuthService(fixture.auth);
-
-    session.handleJoin("Alice", "alices-password");
-    session.handleJoin("Bob", "bobs-password");
-    auto result = session.handleJoin("Carol", "carols-password");
+    session.assignSeat("Alice");
+    session.assignSeat("Bob");
+    auto result = session.assignSeat("Carol");
     CHECK(result.ok == false);
     CHECK(result.error == "ERROR SESSION_FULL");
-}
-
-TEST_CASE("a join with no AuthService attached fails closed") {
-    GameSession session; // attachAuthService() never called
-    auto result = session.handleJoin("Alice", "alices-password");
-    CHECK(result.ok == false);
-    CHECK(result.error == "ERROR AUTH_NOT_CONFIGURED");
-}
-
-TEST_CASE("a join with the wrong password for an existing username is rejected") {
-    AuthFixture fixture;
-    GameSession session;
-    session.attachAuthService(fixture.auth);
-
-    session.handleJoin("Alice", "alices-password"); // auto-registers
-    auto result = session.handleJoin("Alice", "wrong-password");
-    CHECK(result.ok == false);
-    CHECK(result.error == "ERROR AUTH_FAILED");
-}
-
-TEST_CASE("a rejected join (wrong password) does not consume a color slot") {
-    AuthFixture fixture;
-    GameSession session;
-    session.attachAuthService(fixture.auth);
-
-    session.handleJoin("Alice", "alices-password"); // White, slot 1 taken
-    session.handleJoin("Alice", "wrong-password");   // rejected - must not take slot 2
-
-    auto result = session.handleJoin("Bob", "bobs-password");
-    CHECK(result.ok);
-    CHECK(result.color == 'b'); // still the second real slot, not a third
-    CHECK(result.hasOpponent == true);
 }

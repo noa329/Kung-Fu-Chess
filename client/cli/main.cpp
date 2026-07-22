@@ -1,19 +1,20 @@
 // Task B1: connectivity smoke test - establishes a real WebSocket
 // connection to kungfu_server (A5) and confirms the handshake round-trip.
-// Task B3: prompts for a username, sends the server's join message (B2:
-// {"type":"join","username":"..."}), and reacts to the assignment -
-// prints "You are White"/"You are Black", and (only relevant to White,
-// since Black is only ever assigned once White already joined) a "waiting
-// for opponent" state until the "opponent_joined" notice arrives.
 // Task B4: the real gameplay loop. Every state-tick broadcast (a JSON
 // frame with a "board" field and no "type" - see GameStateSerializer, A4)
 // gets printed via BoardPrinter; each stdin line is forwarded verbatim as
 // the command string to the server - this client deliberately has no
 // command parser of its own, since GameCommandParser (A2) already lives
 // server-side and is the source of truth for what's a valid command.
-// Task C4: also prompts for a password (C3's AuthService needs both) and
-// retries the login prompt on rejection instead of leaving the user stuck
-// - see the login retry loop in main() below.
+// Task C4: also prompts for a password and retries the login prompt on
+// rejection instead of leaving the user stuck.
+// Task D3: login ("join") no longer immediately assigns a color - it just
+// authenticates ("logged_in"). This client now follows up with
+// {"type":"play"} to enter real matchmaking, printing "Searching for an
+// opponent..." and waiting for either "joined" (matched - color and
+// opponent both included now, since matching is atomic) or
+// "matchmaking_timeout" (no opponent found within the server's 60s
+// window - this client just reports it and exits, no auto-retry).
 //
 // Threading model, and why: websocketpp's client.run() blocks on the
 // asio event loop, so it can't share a thread with a blocking
@@ -29,9 +30,15 @@
 // enqueues text via enqueueOutput(); the main loop drains and prints that
 // queue immediately before each blocking std::getline() call, mirroring
 // ws_test_client.py's queue-and-flush-before-input() fix exactly. The
-// login retry loop (C4) extends this same rule: waiting for the login
-// response uses a separate mutex/condition_variable, not stdout, so the
-// network thread still never touches std::cout.
+// login/matchmaking waits (C4/D3) extend this same rule: waiting for a
+// server response uses a separate mutex/condition_variable, not stdout,
+// so the network thread still never touches std::cout. The one exception
+// is the "Searching for an opponent..." line, printed synchronously by
+// the main thread itself right after sending "play" rather than waiting
+// for the server's own "searching" ack - the wait for a match can take up
+// to 60 real seconds, and nothing drains the output queue while blocked
+// on that wait, so relying on the server's ack to show this line would
+// leave the user staring at nothing for up to a minute before it appeared.
 //
 // Unlike A1's throwaway linkage proof, this file IS the real deliverable:
 // each task extends this same main(), none of them replace it.
@@ -95,17 +102,22 @@ std::string promptLine(const std::string& prompt) {
     }
 }
 
-// Task C4: coordinates the login retry loop (main thread) with the
-// asynchronous join response (network thread, via handleServerMessage).
-// Not used past the first successful login - the gameplay loop that
-// follows never touches this again.
+// Task C4/D3: coordinates the main thread's sequential waits (first for
+// the login response, then for the matchmaking response) with the
+// asynchronous replies arriving on the network thread via
+// handleServerMessage(). Reused across both waits since they're strictly
+// sequential, never concurrent - not used past a successful match, the
+// gameplay loop that follows never touches this again.
 struct LoginState {
     std::mutex mtx;
     std::condition_variable cv;
     bool connectionOpen = false;
-    bool responsePending = false; // true from the moment a join is sent until a response arrives
+    bool responsePending = false; // true from the moment a request is sent until a response arrives
     bool ok = false;
     std::string error;
+    // Populated only once matched ("joined") - meaningless before then.
+    std::string color;
+    std::string opponent;
 };
 
 void handleServerMessage(const std::string& payload, LoginState& login) {
@@ -118,25 +130,40 @@ void handleServerMessage(const std::string& payload, LoginState& login) {
     if (!j.is_object()) return;
 
     std::string type = j.value("type", "");
-    if (type == "joined") {
-        std::string color = j.value("color", "");
-        std::ostringstream out;
-        out << "You are " << (color == "white" ? "White" : "Black") << ".\n";
-        out << (color == "white" ? "Waiting for opponent...\n"
-                                  : "Opponent already connected. Game starting!\n");
-        enqueueOutput(out.str());
-
+    if (type == "logged_in") {
         std::lock_guard<std::mutex> lock(login.mtx);
         login.ok = true;
         login.responsePending = false;
         login.cv.notify_all();
-    } else if (type == "opponent_joined") {
-        enqueueOutput("Opponent connected: " + j.value("username", "?") + ". Game starting!\n");
     } else if (type == "join_rejected") {
         // No enqueueOutput() here - the login retry loop (main thread)
         // prints the failure and the next prompt together, synchronously,
         // instead of racing an async-queued message against its own
         // immediately-following prompt.
+        std::lock_guard<std::mutex> lock(login.mtx);
+        login.ok = false;
+        login.error = j.value("error", "unknown error");
+        login.responsePending = false;
+        login.cv.notify_all();
+    } else if (type == "searching") {
+        // Deliberately no-op - see the threading-model comment at the top
+        // of this file for why the main thread prints this line itself
+        // instead of waiting on this ack.
+    } else if (type == "joined") {
+        std::string color = j.value("color", "");
+        std::string opponent = j.value("opponent", "?");
+        std::ostringstream out;
+        out << "You are " << (color == "white" ? "White" : "Black")
+            << ". Playing against " << opponent << ".\n";
+        enqueueOutput(out.str());
+
+        std::lock_guard<std::mutex> lock(login.mtx);
+        login.ok = true;
+        login.color = color;
+        login.opponent = opponent;
+        login.responsePending = false;
+        login.cv.notify_all();
+    } else if (type == "matchmaking_timeout") {
         std::lock_guard<std::mutex> lock(login.mtx);
         login.ok = false;
         login.error = j.value("error", "unknown error");
@@ -178,7 +205,7 @@ int main(int argc, char** argv) {
     client.set_close_handler([&login](websocketpp::connection_hdl) {
         enqueueOutput("connection closed\n");
         std::lock_guard<std::mutex> lock(login.mtx);
-        login.responsePending = false; // unblock a login wait stuck on a dead connection
+        login.responsePending = false; // unblock a wait stuck on a dead connection
         login.cv.notify_all();
     });
     client.set_fail_handler([&client, &login](websocketpp::connection_hdl hdl) {
@@ -199,8 +226,9 @@ int main(int argc, char** argv) {
 
     client.connect(con);
 
-    // Network thread: runs the asio event loop (handshake, join response,
-    // every state-tick broadcast) for as long as the connection is alive.
+    // Network thread: runs the asio event loop (handshake, every
+    // response, every state-tick broadcast) for as long as the connection
+    // is alive.
     std::thread networkThread([&client]() { client.run(); });
 
     {
@@ -209,25 +237,29 @@ int main(int argc, char** argv) {
     }
     drainOutput(); // shows "connected to server" before the first prompt
 
+    auto shutdown = [&](int status) {
+        client.stop();
+        if (networkThread.joinable()) networkThread.join();
+        return status;
+    };
+
     // Task C4: login retry loop. Prompts for username + password, sends
-    // the join (C3's AuthService: auto-registers a never-seen-before
-    // username, or verifies an existing one's password), and waits for
-    // the server's accept/reject - retrying on reject instead of leaving
-    // the user stuck typing into a session they never joined.
+    // the join (Task D3: login only, no color/session yet - C3's
+    // AuthService still auto-registers a never-seen-before username, or
+    // verifies an existing one's password), and waits for the server's
+    // accept/reject - retrying on reject instead of leaving the user
+    // stuck.
+    std::string username;
     for (;;) {
-        std::string username = promptLine("Enter your username: ");
+        username = promptLine("Enter your username: ");
         if (username.empty()) {
             std::cout << "no username entered, exiting." << std::endl;
-            client.stop();
-            if (networkThread.joinable()) networkThread.join();
-            return 1;
+            return shutdown(1);
         }
         std::string password = promptLine("Enter your password: ");
         if (password.empty()) {
             std::cout << "no password entered, exiting." << std::endl;
-            client.stop();
-            if (networkThread.joinable()) networkThread.join();
-            return 1;
+            return shutdown(1);
         }
 
         nlohmann::json join{{"type", "join"}, {"username", username}, {"password", password}};
@@ -239,9 +271,7 @@ int main(int argc, char** argv) {
             client.send(hdl, join.dump(), websocketpp::frame::opcode::text);
         } catch (const websocketpp::exception& e) {
             std::cout << "failed to send join: " << e.what() << std::endl;
-            client.stop();
-            if (networkThread.joinable()) networkThread.join();
-            return 1;
+            return shutdown(1);
         }
 
         std::unique_lock<std::mutex> lock(login.mtx);
@@ -253,12 +283,41 @@ int main(int argc, char** argv) {
         if (accepted) break;
         std::cout << "Login failed (" << error << "). Try again." << std::endl;
     }
+    std::cout << "Logged in as " << username << "." << std::endl;
+
+    // Task D3: request a match. See the threading-model comment at the
+    // top of this file for why "Searching..." is printed here directly
+    // rather than via the server's "searching" ack.
+    std::cout << "Searching for an opponent..." << std::endl;
+    {
+        std::lock_guard<std::mutex> lock(login.mtx);
+        login.responsePending = true;
+    }
+    try {
+        client.send(hdl, nlohmann::json{{"type", "play"}}.dump(), websocketpp::frame::opcode::text);
+    } catch (const websocketpp::exception& e) {
+        std::cout << "failed to send play: " << e.what() << std::endl;
+        return shutdown(1);
+    }
+
+    {
+        std::unique_lock<std::mutex> lock(login.mtx);
+        login.cv.wait(lock, [&login] { return !login.responsePending; });
+        if (!login.ok) {
+            std::string matchError = login.error;
+            lock.unlock();
+            std::cout << "Matchmaking failed (" << matchError << ")." << std::endl;
+            return shutdown(1);
+        }
+    }
 
     // Main thread: the interactive gameplay loop. Each line typed is
     // forwarded verbatim as the command string - no client-side parser,
     // GameCommandParser (A2) server-side is the only source of truth for
-    // what's valid. An empty line just flushes queued output, matching
-    // ws_test_client.py's existing convention.
+    // what's valid. An empty line just flushes queued output (including
+    // the "You are White/Black..." line queued by handleServerMessage's
+    // "joined" branch above), matching ws_test_client.py's existing
+    // convention.
     std::string line;
     while (true) {
         drainOutput();
@@ -273,7 +332,5 @@ int main(int argc, char** argv) {
     }
     drainOutput();
 
-    client.stop();
-    if (networkThread.joinable()) networkThread.join();
-    return 0;
+    return shutdown(0);
 }

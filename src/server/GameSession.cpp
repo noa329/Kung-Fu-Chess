@@ -55,12 +55,7 @@ CommandResult GameSession::handleCommand(const ParsedCommand& cmd) {
     return {true, ""};
 }
 
-JoinResult GameSession::handleJoin(const std::string& username, const std::string& password) {
-    if (!authService_) return {false, ' ', false, "ERROR AUTH_NOT_CONFIGURED"};
-
-    AuthResult auth = authService_->authenticate(username, password);
-    if (!auth.ok) return {false, ' ', false, auth.error};
-
+JoinResult GameSession::assignSeat(const std::string& username) {
     if (!whiteJoined_) {
         whiteJoined_ = true;
         whiteUsername_ = username;

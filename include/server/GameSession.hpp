@@ -3,7 +3,6 @@
 #include "GameEngine.hpp"
 #include "GameCommandParser.hpp"
 #include "Logger.hpp"
-#include "AuthService.hpp"
 #include <string>
 
 // Result of GameSession::handleCommand - covers only the validation this
@@ -19,26 +18,29 @@ struct CommandResult {
     std::string error; // set only when ok == false, e.g. "ERROR PIECE_MISMATCH"
 };
 
-// Task B2: player-slot color assignment. First successful join gets White,
-// second gets Black. A third join is rejected - structurally unreachable
-// via a real client today (ConnectionRegistry, A5, already caps the
-// session at 2 connections and closes a 3rd right after its handshake,
-// before any message ever reaches here), but handleJoin() stays a safe,
-// defined decision either way rather than relying on that upstream
-// guarantee, same defensive-validation reasoning GameCommandParser's error
-// taxonomy already established.
+// Task B2: player-slot color assignment. First successful call gets
+// White, second gets Black. A third is rejected - structurally
+// unreachable in practice (Task D3: a GameSession is only ever created
+// for exactly two already-matched players - see WebSocketServer's
+// handleMatch()), but assignSeat() stays a safe, defined decision either
+// way rather than relying on that upstream guarantee, same defensive-
+// validation reasoning GameCommandParser's error taxonomy already
+// established.
 //
-// Task C3: color assignment now happens only *after* AuthService accepts
-// the username/password - see handleJoin() below. error covers both
-// reasons now: "ERROR SESSION_FULL" (unchanged from B2) and whatever
-// AuthService::authenticate() rejected with (e.g. "ERROR AUTH_FAILED").
+// Task D3: authentication is no longer part of this at all.
+// GameSession::handleJoin(username, password) (Task C3) is gone -
+// authentication now happens exactly once, at login time, directly via
+// WebSocketServer's own AuthService, *before* any GameSession exists to
+// call it on (matchmaking is what decides which two already-authenticated
+// usernames end up sharing a session, and only then is one created). So
+// GameSession no longer knows about AuthService/passwords at all - see
+// assignSeat() below, which takes only an already-authenticated username.
 struct JoinResult {
     bool ok;
     char color;       // 'w' | 'b', meaningful only when ok == true
     bool hasOpponent; // true when the other color slot was already filled
-                      // before this join (i.e. this is the 2nd successful
-                      // join) - tells the caller whether an already-connected
-                      // opponent needs notifying
+                      // before this call (i.e. this is the 2nd successful
+                      // seat assignment)
     std::string error; // set only when ok == false, e.g. "ERROR SESSION_FULL"
 };
 
@@ -55,21 +57,12 @@ struct JoinResult {
 // stays silent. attachLogger() lets the composition root (WebSocketServer)
 // opt a real session into logging without needing a second constructor
 // overload or breaking GameSession()'s existing default-constructibility.
-// Logger itself is owned externally (WebSocketServer, later shared across
-// every session once SessionManager exists in Task D1) - not per-session,
-// so multiple concurrent sessions can log to one shared file.
+// Logger itself is owned externally (WebSocketServer, shared across every
+// session since SessionManager/Task D1) - not per-session, so multiple
+// concurrent sessions can log to one shared file.
 class GameSession {
     GameEngine engine_;
     Logger* logger_ = nullptr;
-    // Task C3: not optional in real production use (WebSocketServer always
-    // attaches a real one) - but kept as an optional-attach pointer, same
-    // pattern as logger_, so every pre-existing GameSession()-default-
-    // constructing test that never calls handleJoin() at all (the
-    // handleCommand/logger tests) keeps working unchanged. Unlike logger_'s
-    // silent-no-op-when-absent default, handleJoin() fails *closed*
-    // (ERROR AUTH_NOT_CONFIGURED) when authService_ is null - "no auth
-    // configured" must never silently mean "let everyone in".
-    AuthService* authService_ = nullptr;
     bool whiteJoined_ = false;
     bool blackJoined_ = false;
     std::string whiteUsername_;
@@ -82,12 +75,11 @@ public:
 
     GameEngine& engine() { return engine_; }
     void attachLogger(Logger& logger) { logger_ = &logger; }
-    void attachAuthService(AuthService& auth) { authService_ = &auth; }
 
     CommandResult handleCommand(const ParsedCommand& cmd);
-    // Authenticates via AuthService (auto-register on a never-seen-before
-    // username, per C4) before any color assignment happens - see
-    // AuthService::authenticate() for the accept/reject decision itself.
-    JoinResult handleJoin(const std::string& username, const std::string& password);
+    // Assigns a color to an already-authenticated username - see the
+    // class comment above for why authentication itself isn't this
+    // class's job (or even reachable from here) any more.
+    JoinResult assignSeat(const std::string& username);
 };
 #endif
