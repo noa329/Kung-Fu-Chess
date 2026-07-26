@@ -10,7 +10,7 @@ TARGET = run_tests.exe
 # ב-OpenCV/img.hpp (שיושבים רק מתחת ל-kungfu-graphics/cpp/) - אלה מתקמפלים
 # בנפרד דרך ה-CMake/OpenCV build, ואף בדיקה תחת tests/ לא בודקת אותם.
 ALL_SRC := $(wildcard src/*/*.cpp)
-OPENCV_ONLY_SRC := src/renderer/Board_view.cpp src/renderer/Piece_animator.cpp src/renderer/Sprite_animation.cpp src/renderer/Hud_view.cpp src/renderer/RestDurationLoader.cpp
+OPENCV_ONLY_SRC := src/renderer/Board_view.cpp src/renderer/Piece_animator.cpp src/renderer/Sprite_animation.cpp src/renderer/Hud_view.cpp src/renderer/RestDurationLoader.cpp src/renderer/OnlineMenuView.cpp
 # WebSocketServer.cpp needs websocketpp/Asio, which this build has no access
 # to (they're CMake FetchContent-only, see server/CMakeLists.txt and
 # third_party/README.md) - everything else under src/server/ is pure logic

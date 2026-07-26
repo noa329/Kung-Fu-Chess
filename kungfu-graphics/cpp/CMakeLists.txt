@@ -43,16 +43,15 @@ FetchContent_Populate(websocketpp)
 # examples/tests, none of which we want. Fetch source only, use its
 # top-level directory as a header-only include path.
 
-# Files under kungfu-graphics/cpp/src (img.cpp, img.hpp, main.cpp)
+# Files under kungfu-graphics/cpp/src (img.cpp, img.hpp, main.cpp,
+# OnlineClient.hpp/.cpp - Task H3b's graphics-build-only websocketpp glue,
+# see its own header comment for why it isn't under the shared net_client/
+# tree)
 file(GLOB LOCAL_SOURCES "src/*.cpp")
 file(GLOB LOCAL_HEADERS "src/*.hpp")
 
-# Task H1: net_smoke_test.cpp has its own main() and its own (non-OpenCV)
-# target below - excluded here or the glob above would pull it into
-# ${PROJECT_NAME} too, colliding with main.cpp's main() at link time.
-list(REMOVE_ITEM LOCAL_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/net_smoke_test.cpp")
-
-# The graphics view (Board_view/Piece_animator/Sprite_animation) lives in
+# The graphics view (Board_view/Piece_animator/Sprite_animation/
+# OnlineMenuView) lives in
 # the main project tree, not here - explicit glob needed since the one
 # above doesn't reach it.
 file(GLOB RENDERER_SOURCES "${MAIN_PROJECT_ROOT}/src/renderer/*.cpp")
@@ -76,7 +75,15 @@ file(GLOB ENGINE_SOURCES
 # starting-position literal.
 set(TEXT_IO_SOURCES "${MAIN_PROJECT_ROOT}/src/text_io/BoardParser.cpp")
 
-set(SOURCES ${LOCAL_SOURCES} ${RENDERER_SOURCES} ${ENGINE_SOURCES} ${TEXT_IO_SOURCES})
+# Task H2/H3b: net_client's pure logic (GameStateDeserializer/
+# NetworkEventParser, not yet called from this target - see their own
+# header comments for which later task wires them in; TextFieldInput/
+# OnlineFlowState, used by OnlineMenuView.cpp/main.cpp respectively). None
+# of these depend on OpenCV; all four are also dual-compiled into
+# run_tests.exe via the root Makefile for doctest coverage.
+file(GLOB NET_CLIENT_SOURCES "${MAIN_PROJECT_ROOT}/src/net_client/*.cpp")
+
+set(SOURCES ${LOCAL_SOURCES} ${RENDERER_SOURCES} ${ENGINE_SOURCES} ${TEXT_IO_SOURCES} ${NET_CLIENT_SOURCES})
 set(HEADERS ${LOCAL_HEADERS})
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
@@ -101,6 +108,29 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     "${MAIN_PROJECT_ROOT}/include/event_bus"
     "${MAIN_PROJECT_ROOT}/include/text_io"
     "${MAIN_PROJECT_ROOT}/third_party/miniaudio"
+    # Task H3b: OnlineMenuView.cpp (renderer layer) uses TextFieldInput
+    # (net_client, Task H2's dual-compiled pure-logic sibling); main.cpp
+    # uses OnlineFlowState from the same layer.
+    "${MAIN_PROJECT_ROOT}/include/net_client"
+    # Task H3b: OnlineClient.hpp/.cpp (this target only, see its own header
+    # comment) is the first thing in ${PROJECT_NAME} that needs
+    # websocketpp/Asio/nlohmann - proven compiling under this MSVC
+    # toolchain by Task H1's now-superseded, now-removed smoke-test target.
+    ${asio_SOURCE_DIR}/asio/include
+    ${websocketpp_SOURCE_DIR}
+    "${MAIN_PROJECT_ROOT}/third_party/nlohmann"
+)
+
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    ASIO_STANDALONE
+    # Task H1's real MSVC-specific finding, still needed here for the same
+    # reason: MSVC's __cplusplus stays at the pre-C++11 value unless
+    # /Zc:__cplusplus is set, so websocketpp's own C++11 feature detection
+    # never fires without this - see the (removed) smoke-test target's
+    # former comment in git history for the full C1083 story. No
+    # _WEBSOCKETPP_CPP11_THREAD_ (server/CMakeLists.txt's MinGW-only fix) -
+    # would be a no-op under MSVC.
+    _WEBSOCKETPP_CPP11_STL_
 )
 
 target_link_directories(${PROJECT_NAME} PRIVATE ${OPENCV_LIB_DIR})
@@ -116,6 +146,11 @@ target_link_libraries(${PROJECT_NAME}
 # uses, so it needs to be linked against explicitly.
 if(WIN32)
     target_link_libraries(${PROJECT_NAME} ole32)
+endif()
+
+# Task H3b: OnlineClient's websocketpp/Asio networking.
+if(WIN32)
+    target_link_libraries(${PROJECT_NAME} ws2_32 wsock32)
 endif()
 
 if(WIN32)
@@ -139,46 +174,10 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 message(STATUS "Found source files: ${SOURCES}")
 message(STATUS "Found header files: ${HEADERS}")
 
-# docs/tasks/graphics-networked-client-plan.md, Task H1: proves websocketpp/
-# Asio/nlohmann actually compile and link under this project's MSVC
-# toolchain (server/ only ever proved this under MinGW/g++ - a real,
-# previously-unverified risk, see the plan). Deliberately a separate,
-# OpenCV-free target from ${PROJECT_NAME} - isolates this proof so it can
-# fail/iterate without risking the existing, working local-play build, and
-# needs none of KungFuChess's own dependencies to do its job (connect to a
-# server and print a line). Superseded by the real include/net_client
-# layer once Task H2 lands - not meant to be the permanent home for this
-# code.
-add_executable(KungFuChessNetSmokeTest src/net_smoke_test.cpp)
-
-target_include_directories(KungFuChessNetSmokeTest PRIVATE
-    ${asio_SOURCE_DIR}/asio/include
-    ${websocketpp_SOURCE_DIR}
-    "${MAIN_PROJECT_ROOT}/third_party/nlohmann"
-)
-
-target_compile_definitions(KungFuChessNetSmokeTest PRIVATE
-    ASIO_STANDALONE
-    # Unlike server/CMakeLists.txt, no _WEBSOCKETPP_CPP11_THREAD_ define
-    # here: that bypasses a blanket rule in websocketpp/common/thread.hpp
-    # that only triggers when __MINGW32__/__MINGW64__ is defined, which is
-    # never true under MSVC - so it would be a no-op here, not a "matches
-    # server/ for consistency" case worth keeping.
-    #
-    # _WEBSOCKETPP_CPP11_STL_ IS needed here, though, and is the first real
-    # MSVC-specific finding from Task H1: MSVC reports __cplusplus as the
-    # pre-C++11 value 199711L by default regardless of /std:c++17(a
-    # documented MSVC quirk - the real value needs an opt-in /Zc:__cplusplus
-    # flag MSVC doesn't set by default), so websocketpp/common/cpp11.hpp's
-    # own __cplusplus >= 201103L feature-detection never fires and
-    # common/random.hpp falls through to a `#include <boost/version.hpp>`
-    # path we don't have - confirmed by a real C1083 "Cannot open include
-    # file: 'boost/version.hpp'" build failure, not a guess. websocketpp's
-    # own cpp11.hpp comment documents this exact define as the intended
-    # escape hatch for a build system that knows better than __cplusplus.
-    _WEBSOCKETPP_CPP11_STL_
-)
-
-if(WIN32)
-    target_link_libraries(KungFuChessNetSmokeTest PRIVATE ws2_32 wsock32)
-endif()
+# Task H1's throwaway KungFuChessNetSmokeTest target (proved websocketpp/
+# Asio/nlohmann compile under this MSVC toolchain, isolated from
+# ${PROJECT_NAME} while that was unproven) is removed as of Task H3b -
+# ${PROJECT_NAME} itself now links websocketpp for real (OnlineClient,
+# above), so a separate proof target is redundant. See git history for the
+# smoke test's own code/comments if the original MSVC findings are needed
+# again.
