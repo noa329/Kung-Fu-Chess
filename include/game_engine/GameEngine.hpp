@@ -76,6 +76,18 @@ public:
     // session, as opposed to loadBoard() alone (used freely by tests, which
     // don't care about the lifecycle event).
     void startGame(const std::vector<std::vector<std::string>>& grid);
+    // Task E3: fires onGameLifecycle({"start", ""}) alone, without
+    // touching the board - for a caller that already loadBoard()'d
+    // separately and wants to defer just the *announcement* of game
+    // start. Room sessions need this: the board is loaded (and broadcast)
+    // the moment a room is created so its lone creator sees the starting
+    // position while waiting, but the "game start" lifecycle event (and
+    // therefore its log line, and any future ELO/analytics hook) should
+    // only fire once a real 2nd player has actually joined - same
+    // "exactly 2 known participants" moment matchmaking's startGame()
+    // call already gets for free by only ever creating a session once
+    // both players are matched.
+    void announceStart();
     void select(const Position& pos);
     void jump(const Position& pos);
     void wait(int ms);

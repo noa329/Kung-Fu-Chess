@@ -16,6 +16,11 @@
 // "matchmaking_timeout" (no opponent found within the server's 60s
 // window - this client just reports it and exits, no auto-retry).
 //
+// Task E3: after login, a menu offers quick-match (the D3 flow above,
+// unchanged) alongside creating or joining a room by ID. Room join can
+// return "color":"spectator" (E1/E2) - handleServerMessage()'s "joined"
+// branch reports that distinctly instead of defaulting to "Black".
+//
 // Threading model, and why: websocketpp's client.run() blocks on the
 // asio event loop, so it can't share a thread with a blocking
 // std::getline(std::cin, ...) loop. This runs client.run() on its own
@@ -123,6 +128,9 @@ struct LoginState {
     // entirely and go straight into the gameplay loop, since the server
     // already resumed an in-progress session.
     bool reconnected = false;
+    // Task E3: populated only by "room_created" - the id to share with
+    // whoever should join this room.
+    std::string roomId;
 };
 
 void handleServerMessage(const std::string& payload, LoginState& login) {
@@ -173,11 +181,22 @@ void handleServerMessage(const std::string& payload, LoginState& login) {
         // of this file for why the main thread prints this line itself
         // instead of waiting on this ack.
     } else if (type == "joined") {
+        // Task E3: a room join can also come back as "color":"spectator"
+        // (E1/E2) - reported distinctly rather than falling through to
+        // "Black" the way a naive (color == "white" ? "White" : "Black")
+        // check would.
         std::string color = j.value("color", "");
         std::string opponent = j.value("opponent", "?");
         std::ostringstream out;
-        out << "You are " << (color == "white" ? "White" : "Black")
-            << ". Playing against " << opponent << ".\n";
+        if (color == "white") {
+            out << "You are White. Playing against " << opponent << ".\n";
+        } else if (color == "black") {
+            out << "You are Black. Playing against " << opponent << ".\n";
+        } else {
+            std::string white = j.value("whiteUsername", "?");
+            std::string black = j.value("blackUsername", "?");
+            out << "You are spectating: " << white << " (White) vs " << black << " (Black).\n";
+        }
         enqueueOutput(out.str());
 
         std::lock_guard<std::mutex> lock(login.mtx);
@@ -187,6 +206,23 @@ void handleServerMessage(const std::string& payload, LoginState& login) {
         login.responsePending = false;
         login.cv.notify_all();
     } else if (type == "matchmaking_timeout") {
+        std::lock_guard<std::mutex> lock(login.mtx);
+        login.ok = false;
+        login.error = j.value("error", "unknown error");
+        login.responsePending = false;
+        login.cv.notify_all();
+    } else if (type == "room_created") {
+        std::string roomId = j.value("roomId", "?");
+        std::ostringstream out;
+        out << "Room created! Room ID: " << roomId << " - share this with your opponent.\n";
+        enqueueOutput(out.str());
+
+        std::lock_guard<std::mutex> lock(login.mtx);
+        login.ok = true;
+        login.roomId = roomId;
+        login.responsePending = false;
+        login.cv.notify_all();
+    } else if (type == "join_room_rejected" || type == "create_room_rejected") {
         std::lock_guard<std::mutex> lock(login.mtx);
         login.ok = false;
         login.error = j.value("error", "unknown error");
@@ -315,32 +351,55 @@ int main(int argc, char** argv) {
 
     // Task D4: a reconnect resumes an already-in-progress session (the
     // "reconnected" branch above already set login.ok/color/opponent) -
-    // skip matchmaking entirely and fall straight through to the
-    // gameplay loop below, same as a freshly matched game would reach it.
+    // skip matchmaking/room selection entirely and fall straight through
+    // to the gameplay loop below, same as a freshly matched game would
+    // reach it.
     if (!wasReconnect) {
         std::cout << "Logged in as " << username << "." << std::endl;
 
-        // Task D3: request a match. See the threading-model comment at
-        // the top of this file for why "Searching..." is printed here
-        // directly rather than via the server's "searching" ack.
-        std::cout << "Searching for an opponent..." << std::endl;
+        // Task E3: quick-match (D3's original flow), create a room, or
+        // join one by ID - all three end up sending exactly one request
+        // and waiting for exactly one response, so they share the same
+        // responsePending/ok/error wait LoginState was already built for.
+        std::string choice;
+        for (;;) {
+            choice = promptLine("[1] Quick match  [2] Create room  [3] Join room: ");
+            if (choice == "1" || choice == "2" || choice == "3") break;
+            std::cout << "Please enter 1, 2, or 3." << std::endl;
+        }
+
+        nlohmann::json request;
+        if (choice == "1") {
+            request = {{"type", "play"}};
+            // Task D3: printed here directly, not on the server's own
+            // "searching" ack - see the threading-model comment at the
+            // top of this file for why (the wait can take up to 60 real
+            // seconds with nothing else draining the output queue).
+            std::cout << "Searching for an opponent..." << std::endl;
+        } else if (choice == "2") {
+            request = {{"type", "create_room"}};
+        } else {
+            std::string roomId = promptLine("Enter room ID: ");
+            request = {{"type", "join_room"}, {"roomId", roomId}};
+        }
+
         {
             std::lock_guard<std::mutex> lock(login.mtx);
             login.responsePending = true;
         }
         try {
-            client.send(hdl, nlohmann::json{{"type", "play"}}.dump(), websocketpp::frame::opcode::text);
+            client.send(hdl, request.dump(), websocketpp::frame::opcode::text);
         } catch (const websocketpp::exception& e) {
-            std::cout << "failed to send play: " << e.what() << std::endl;
+            std::cout << "failed to send request: " << e.what() << std::endl;
             return shutdown(1);
         }
 
         std::unique_lock<std::mutex> lock(login.mtx);
         login.cv.wait(lock, [&login] { return !login.responsePending; });
         if (!login.ok) {
-            std::string matchError = login.error;
+            std::string requestError = login.error;
             lock.unlock();
-            std::cout << "Matchmaking failed (" << matchError << ")." << std::endl;
+            std::cout << "Request failed (" << requestError << ")." << std::endl;
             return shutdown(1);
         }
     }

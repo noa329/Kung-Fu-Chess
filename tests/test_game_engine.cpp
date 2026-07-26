@@ -286,6 +286,44 @@ TEST_CASE("plain loadBoard does not fire a game-start lifecycle event") {
     CHECK(callCount == 0);
 }
 
+// Task E3: announceStart() is startGame() split in two - fires the same
+// lifecycle event on its own, without touching the board, for a room
+// session that already loaded (and is broadcasting) the board while
+// waiting for its 2nd player, and only wants the "start" announcement
+// deferred to the moment that 2nd player actually joins.
+
+TEST_CASE("announceStart fires the lifecycle event without touching the board") {
+    GameEngine engine;
+    engine.loadBoard({{"wK", ".", "."}});
+    std::vector<GameLifecycleEvent> received;
+    engine.events().onGameLifecycle.subscribe(
+        [&received](const GameLifecycleEvent& e) { received.push_back(e); });
+
+    engine.announceStart();
+
+    REQUIRE(received.size() == 1);
+    CHECK(received[0].phase == "start");
+    CHECK(engine.snapshot().boardTokens == std::vector<std::vector<std::string>>{{"wK", ".", "."}});
+}
+
+TEST_CASE("loadBoard followed by announceStart behaves the same as startGame") {
+    GameEngine engineSplit;
+    GameEngine engineCombined;
+    std::vector<GameLifecycleEvent> splitEvents, combinedEvents;
+    engineSplit.events().onGameLifecycle.subscribe(
+        [&splitEvents](const GameLifecycleEvent& e) { splitEvents.push_back(e); });
+    engineCombined.events().onGameLifecycle.subscribe(
+        [&combinedEvents](const GameLifecycleEvent& e) { combinedEvents.push_back(e); });
+
+    engineSplit.loadBoard({{"wK", ".", "."}});
+    engineSplit.announceStart();
+    engineCombined.startGame({{"wK", ".", "."}});
+
+    REQUIRE(splitEvents.size() == combinedEvents.size());
+    CHECK(splitEvents[0].phase == combinedEvents[0].phase);
+    CHECK(engineSplit.snapshot().boardTokens == engineCombined.snapshot().boardTokens);
+}
+
 TEST_CASE("select-then-move to an empty cell fires a move sound and a move-logged event") {
     GameEngine engine;
     engine.loadBoard({{"wR", ".", "."}});

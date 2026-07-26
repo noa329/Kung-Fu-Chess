@@ -13,7 +13,7 @@
 namespace {
 
 std::string colorName(char color) {
-    return color == 'w' ? "white" : "black";
+    return color == 'w' ? "white" : (color == 'b' ? "black" : "spectator");
 }
 
 // Renders non-printable bytes (notably a stray \r from a client whose line
@@ -82,7 +82,12 @@ int WebSocketServer::createSession() {
     int id = sessionManager_.createSession();
     auto session = std::make_unique<GameSession>();
     session->attachLogger(logger_);
-    session->engine().startGame(loadStartingPosition());
+    // Task E3: loadBoard() only, not startGame() - the board is loaded (and
+    // will broadcast) immediately either way, but the "start" lifecycle
+    // announcement is now deferred to whichever join() call actually
+    // completes the two-player roster (announceStart(), called from
+    // handleMatch() and handleJoinRoom() - see the class comment).
+    session->engine().loadBoard(loadStartingPosition());
     sessions_.push_back(std::move(session));
     return id;
 }
@@ -274,13 +279,15 @@ void WebSocketServer::handleMatch(int seekerIdA, int seekerIdB) {
 
     JoinResult resultA = sessions_[sessionId]->join(userA);
     JoinResult resultB = sessions_[sessionId]->join(userB);
+    // Task E3: both players are known the instant this session exists (the
+    // exact "2 known participants" moment room joins only reach later, at
+    // the seat-filling join - see handleJoinRoom()), so announce start
+    // right here rather than relying on createSession() to do it (it no
+    // longer does, since a room session needs that deferred).
+    sessions_[sessionId]->engine().announceStart();
 
-    sendJson(hdlA, nlohmann::json{
-        {"type", "joined"}, {"color", colorName(resultA.color)}, {"username", userA}, {"opponent", userB}
-    }.dump());
-    sendJson(hdlB, nlohmann::json{
-        {"type", "joined"}, {"color", colorName(resultB.color)}, {"username", userB}, {"opponent", userA}
-    }.dump());
+    sendJoinedMessage(hdlA, sessionId, userA, resultA.color);
+    sendJoinedMessage(hdlB, sessionId, userB, resultB.color);
 
     broadcastState(sessionId);
 }
@@ -295,6 +302,81 @@ void WebSocketServer::handleMatchmakingTimeout(int seekerId) {
     hdlToSeekerId_.erase(hdl);
 
     sendJson(hdl, nlohmann::json{{"type", "matchmaking_timeout"}, {"error", "ERROR NO_OPPONENT_FOUND"}}.dump());
+}
+
+void WebSocketServer::sendJoinedMessage(websocketpp::connection_hdl hdl, int sessionId, const std::string& username, char color) {
+    GameSession& session = *sessions_[sessionId];
+    std::string whiteUsername = session.usernameFor('w');
+    std::string blackUsername = session.usernameFor('b');
+    // "opponent" keeps its existing single-name meaning for an actual
+    // player (matchmaking's original shape, unchanged); a spectator has no
+    // single opponent, so it gets a summary of both instead - whiteUsername/
+    // blackUsername are also included directly for a client that wants
+    // them without parsing that string.
+    std::string opponent = (color == 'w') ? blackUsername
+                          : (color == 'b') ? whiteUsername
+                          : (whiteUsername + " vs " + blackUsername);
+    sendJson(hdl, nlohmann::json{
+        {"type", "joined"}, {"color", colorName(color)}, {"username", username},
+        {"opponent", opponent}, {"whiteUsername", whiteUsername}, {"blackUsername", blackUsername}
+    }.dump());
+}
+
+void WebSocketServer::handleCreateRoom(websocketpp::connection_hdl hdl) {
+    auto authIt = authenticatedUsers_.find(hdl);
+    if (authIt == authenticatedUsers_.end()) {
+        sendJson(hdl, nlohmann::json{{"type", "create_room_rejected"}, {"error", "ERROR NOT_LOGGED_IN"}}.dump());
+        return;
+    }
+    std::string username = authIt->second.username;
+
+    int sessionId = createSession();
+    sessionManager_.tryAdd(sessionId, hdl);
+    JoinResult result = sessions_[sessionId]->join(username); // creator is always the 1st join -> White
+    usernameToSessionId_[username] = sessionId;
+
+    std::string roomId = roomRegistry_.createRoom(sessionId);
+    sendJson(hdl, nlohmann::json{
+        {"type", "room_created"}, {"roomId", roomId}, {"color", colorName(result.color)}, {"username", username}
+    }.dump());
+    // Broadcasts the freshly loaded starting position immediately, rather
+    // than waiting for the next tick, so the creator isn't staring at
+    // nothing while alone in the room - same reasoning handleMatch() has
+    // for its own immediate broadcastState() call.
+    broadcastState(sessionId);
+}
+
+void WebSocketServer::handleJoinRoom(websocketpp::connection_hdl hdl, const std::string& roomId) {
+    auto authIt = authenticatedUsers_.find(hdl);
+    if (authIt == authenticatedUsers_.end()) {
+        sendJson(hdl, nlohmann::json{{"type", "join_room_rejected"}, {"error", "ERROR NOT_LOGGED_IN"}}.dump());
+        return;
+    }
+    auto sessionIdOpt = roomRegistry_.sessionForRoom(roomId);
+    if (!sessionIdOpt) {
+        sendJson(hdl, nlohmann::json{{"type", "join_room_rejected"}, {"error", "ERROR ROOM_NOT_FOUND"}}.dump());
+        return;
+    }
+    int sessionId = *sessionIdOpt;
+    if (!sessionManager_.tryAdd(sessionId, hdl)) {
+        sendJson(hdl, nlohmann::json{{"type", "join_room_rejected"}, {"error", "ERROR ROOM_FULL"}}.dump());
+        return;
+    }
+
+    std::string username = authIt->second.username;
+    JoinResult result = sessions_[sessionId]->join(username);
+    usernameToSessionId_[username] = sessionId;
+
+    // The 2nd join (Black) is the exact moment this room's two-player
+    // roster is complete - the deferred counterpart to handleMatch()'s own
+    // immediate announceStart() call (see the class comment's Task E3
+    // paragraph). A 3rd+ join (spectator) never re-fires this.
+    if (result.color == 'b') {
+        sessions_[sessionId]->engine().announceStart();
+    }
+
+    sendJoinedMessage(hdl, sessionId, username, result.color);
+    broadcastState(sessionId);
 }
 
 void WebSocketServer::startDisconnectTimer(int sessionId, char color) {
@@ -360,8 +442,8 @@ void WebSocketServer::onMessage(websocketpp::connection_hdl hdl, server_t::messa
     }
 
     // Not yet in a session - the only messages that make sense here are
-    // login and play (Task D3's connection lifecycle, see the class
-    // comment in WebSocketServer.hpp).
+    // login, play, and create/join room (Task D3/E3's connection
+    // lifecycle, see the class comment in WebSocketServer.hpp).
     nlohmann::json j;
     try {
         j = nlohmann::json::parse(payload);
@@ -381,6 +463,15 @@ void WebSocketServer::onMessage(websocketpp::connection_hdl hdl, server_t::messa
         handleLogin(hdl, username, password);
     } else if (type == "play") {
         handlePlay(hdl);
+    } else if (type == "create_room") {
+        handleCreateRoom(hdl);
+    } else if (type == "join_room") {
+        std::string roomId = j.value("roomId", "");
+        if (roomId.empty()) {
+            sendJson(hdl, nlohmann::json{{"type", "join_room_rejected"}, {"error", "ERROR MALFORMED_JOIN_ROOM"}}.dump());
+            return;
+        }
+        handleJoinRoom(hdl, roomId);
     }
     // Anything else before login/matching is silently ignored.
 }

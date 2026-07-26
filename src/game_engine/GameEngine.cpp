@@ -65,6 +65,10 @@ void GameEngine::resign(char color) {
 
 void GameEngine::startGame(const std::vector<std::vector<std::string>>& grid) {
     loadBoard(grid);
+    announceStart();
+}
+
+void GameEngine::announceStart() {
     events_.onGameLifecycle.publish({"start", ""});
 }
 

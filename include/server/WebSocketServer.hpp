@@ -6,6 +6,7 @@
 #include "GameSession.hpp"
 #include "SessionManager.hpp"
 #include "MatchmakingQueue.hpp"
+#include "RoomRegistry.hpp"
 #include "Logger.hpp"
 #include "Database.hpp"
 #include "UserRepository.hpp"
@@ -71,6 +72,39 @@
 // support is specifically for a game already in progress, not the search
 // queue, which already has its own independent 60s give-up timeout (D3).
 //
+// Task E3: rooms, the wiring E1's RoomRegistry/GameSession::join() unification
+// deliberately deferred. A second entry point alongside matchmaking, reaching
+// the exact same GameSession::join() (see GameSession.hpp's class comment for
+// why that's one method, not two role-assignment implementations):
+//   - `{"type":"create_room"}` - creates a session (createSession() now only
+//     loadBoard()s, doesn't auto-start - see below), registers it with
+//     roomRegistry_, joins the caller as White. Responds
+//     `{"type":"room_created","roomId":...,"color":"white",...}`.
+//   - `{"type":"join_room","roomId":...}` - looks the id up via
+//     roomRegistry_.sessionForRoom(), then join()s the caller: 2nd join
+//     becomes Black (and *this* is what fires the deferred
+//     GameEngine::announceStart() - see below), 3rd+ becomes a spectator.
+//     Responds with the same `{"type":"joined",...}` shape matchmaking's
+//     handleMatch() already sends (built by the shared sendJoinedMessage()
+//     helper), `"color"` now also able to be `"spectator"`. Unknown room id ->
+//     `{"type":"join_room_rejected","error":"ERROR ROOM_NOT_FOUND"}`.
+// `createSession()` no longer calls `engine().startGame(...)` (which both
+// loads the board *and* fires the onGameLifecycle "start" event) - it now
+// just `loadBoard()`s, so a room's lone creator still sees the starting
+// position broadcast while waiting, but the "start" announcement itself is
+// deferred (`engine().announceStart()`) to whichever join() call actually
+// completes the two-player roster. handleMatch() calls announceStart()
+// itself right after its own two join() calls, since matchmaking always has
+// both players the instant a session exists - functionally unchanged from
+// before, just now an explicit call instead of createSession()'s own side
+// effect. `kMaxConnectionsPerSession` raised from 2 to 10 (2 seats + up to 8
+// spectators) to make room joins past the 2nd even possible - uniform across
+// every session including matchmaking's, where it's inert today (nothing
+// currently tries to add a 3rd connection to a matchmaking session) but
+// structurally leaves that door open. Room join requires the same login as
+// matchmaking (open question resolved before E1 started) - no anonymous
+// spectating.
+//
 // Task C3: Database/UserRepository/AuthService stay process-wide, not
 // per-session - data/kungfu_chess.db, created by server/main.cpp before
 // this class is constructed (SQLite can create the .db file itself but
@@ -95,7 +129,16 @@ public:
     void run();
 
 private:
-    static constexpr size_t kMaxConnectionsPerSession = 2;
+    // Task E3: raised from 2 (players only) to accommodate spectators too
+    // - 2 seats + up to 8 spectators. Uniform across every session
+    // regardless of origin (matchmaking or room), same as before raising
+    // it - matchmaking sessions just never happen to receive a 3rd
+    // tryAdd() today (no entry point wires one in), so this is inert for
+    // them, not a behavior change; it's what actually makes room
+    // spectating possible. GameSession::join() (not this cap) is still
+    // the sole authority on *who* gets a seat vs. becomes a spectator -
+    // this only bounds the raw connection-registry slot count.
+    static constexpr size_t kMaxConnectionsPerSession = 10;
     // How often the timer fires - NOT how much simulated time passes per
     // tick. That's measured separately (lastTickTime_) and fed to
     // engine().wait() as the real elapsed duration: the real tick period
@@ -188,10 +231,13 @@ private:
     // Task D4: disconnected seats currently counting down toward
     // auto-resign, keyed by (sessionId, color).
     std::map<std::pair<int, char>, DisconnectedSeat> disconnectedSeats_;
+    // Task E3: room id <-> session id discovery (pure, see RoomRegistry.hpp).
+    RoomRegistry roomRegistry_;
 
     // Creates a new session: SessionManager bookkeeping plus the actual
-    // GameSession (logger attached, standard board loaded). Only ever
-    // called from handleMatch() - see the class comment above.
+    // GameSession (logger attached, standard board loaded - but not
+    // started, see the class comment's Task E3 paragraph). Called from
+    // both handleMatch() and handleCreateRoom().
     int createSession();
 
     void onOpen(websocketpp::connection_hdl hdl);
@@ -209,6 +255,15 @@ private:
     void handlePlay(websocketpp::connection_hdl hdl);
     void handleMatch(int seekerIdA, int seekerIdB);
     void handleMatchmakingTimeout(int seekerId);
+
+    // Task E3: room-flow handlers - see the class comment above for the
+    // full message shapes.
+    void handleCreateRoom(websocketpp::connection_hdl hdl);
+    void handleJoinRoom(websocketpp::connection_hdl hdl, const std::string& roomId);
+    // Shared by handleMatch() and handleJoinRoom() - the one place the
+    // `{"type":"joined",...}` response is built, so a matchmaking join and
+    // a room join (player or spectator) all produce the identical shape.
+    void sendJoinedMessage(websocketpp::connection_hdl hdl, int sessionId, const std::string& username, char color);
 
     // Task D4: reconnect-vs-fresh-login branch, split out of handleLogin()
     // once auth succeeds. True (and fully handled: hdl re-added to the
