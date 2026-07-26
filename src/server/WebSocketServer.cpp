@@ -82,6 +82,11 @@ int WebSocketServer::createSession() {
     int id = sessionManager_.createSession();
     auto session = std::make_unique<GameSession>();
     session->attachLogger(logger_);
+    // Task G4: id is captured by value - stable regardless of how many
+    // more sessions get created later, since it's the same session id
+    // this GameSession is permanently associated with (sessions_/
+    // sessionManager_ are parallel-indexed by it, see the class comment).
+    session->attachEventSink([this, id](const std::string& json) { broadcastToSession(id, json); });
     // Task E3: loadBoard() only, not startGame() - the board is loaded (and
     // will broadcast) immediately either way, but the "start" lifecycle
     // announcement is now deferred to whichever join() call actually
@@ -279,15 +284,25 @@ void WebSocketServer::handleMatch(int seekerIdA, int seekerIdB) {
 
     JoinResult resultA = sessions_[sessionId]->join(userA);
     JoinResult resultB = sessions_[sessionId]->join(userB);
+
+    sendJoinedMessage(hdlA, sessionId, userA, resultA.color);
+    sendJoinedMessage(hdlB, sessionId, userB, resultB.color);
+
     // Task E3: both players are known the instant this session exists (the
     // exact "2 known participants" moment room joins only reach later, at
     // the seat-filling join - see handleJoinRoom()), so announce start
     // right here rather than relying on createSession() to do it (it no
     // longer does, since a room session needs that deferred).
+    //
+    // Task G4: announceStart() now has a client-visible side effect too -
+    // it synchronously pushes a discrete lifecycle-start message via
+    // GameSession's event sink (see the class comment) - so it has to run
+    // *after* both sendJoinedMessage() calls above, not before: a
+    // connection should learn its own identity/color before a general
+    // "the game has started" notification, and since both sends happen on
+    // the same connection in call order, swapping this would otherwise let
+    // "lifecycle" arrive before "joined" on the wire.
     sessions_[sessionId]->engine().announceStart();
-
-    sendJoinedMessage(hdlA, sessionId, userA, resultA.color);
-    sendJoinedMessage(hdlB, sessionId, userB, resultB.color);
 
     broadcastState(sessionId);
 }
@@ -367,15 +382,22 @@ void WebSocketServer::handleJoinRoom(websocketpp::connection_hdl hdl, const std:
     JoinResult result = sessions_[sessionId]->join(username);
     usernameToSessionId_[username] = sessionId;
 
+    sendJoinedMessage(hdl, sessionId, username, result.color);
+
     // The 2nd join (Black) is the exact moment this room's two-player
     // roster is complete - the deferred counterpart to handleMatch()'s own
     // immediate announceStart() call (see the class comment's Task E3
     // paragraph). A 3rd+ join (spectator) never re-fires this.
+    //
+    // Task G4: called after sendJoinedMessage() above, same identity-
+    // before-general-notification ordering reasoning handleMatch() now
+    // documents - announceStart()'s discrete lifecycle-start push
+    // broadcasts to this connection too (it's the joiner completing the
+    // roster), so it needs to land after this connection's own "joined".
     if (result.color == 'b') {
         sessions_[sessionId]->engine().announceStart();
     }
 
-    sendJoinedMessage(hdl, sessionId, username, result.color);
     broadcastState(sessionId);
 }
 
@@ -525,6 +547,10 @@ void WebSocketServer::broadcastState(int sessionId) {
     disconnectStatus.blackRemainingMs = remainingMs('b');
 
     std::string state = GameStateSerializer::serialize(sessions_[sessionId]->engine().snapshot(), disconnectStatus);
+    broadcastToSession(sessionId, state);
+}
+
+void WebSocketServer::broadcastToSession(int sessionId, const std::string& json) {
     for (const auto& hdl : sessionManager_.connectionsIn(sessionId)) {
         // Normally onClose() (Task D4) removes a dead hdl from
         // sessionManager_ before the next tick, so this loop shouldn't see
@@ -535,7 +561,7 @@ void WebSocketServer::broadcastState(int sessionId) {
         // manual testing is what put it here originally) rather than
         // trusting handler ordering.
         try {
-            server_.send(hdl, state, websocketpp::frame::opcode::text);
+            server_.send(hdl, json, websocketpp::frame::opcode::text);
         } catch (const websocketpp::exception&) {
             // Swallow - see comment above.
         }

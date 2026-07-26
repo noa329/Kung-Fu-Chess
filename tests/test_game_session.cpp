@@ -334,6 +334,100 @@ TEST_CASE("after attachLogger, a king capture logs a lifecycle end with the resu
     CHECK(log.find("result=White Wins") != std::string::npos);
 }
 
+// Task G4: attachEventSink() pushes onSound/onGameLifecycle to a
+// caller-supplied sink as pre-serialized JSON, gated the same way
+// attachLogger() gates logger_ - a default-constructed GameSession (used
+// throughout every test above) stays silent unless it's called.
+
+TEST_CASE("without attachEventSink, a capture produces no sink output") {
+    GameSession session; // no attachEventSink call
+    session.engine().loadBoard({{"wR", "bN", "."}});
+    session.join("Alice"); // White
+
+    session.handleCommand("Alice", ParsedCommand{false, 'w', 'R', Position{0, 0}, Position{0, 1}});
+    session.engine().wait(1000); // resolve the capture
+
+    // Nothing to assert on directly since there's no sink - this test
+    // exists to prove the call above doesn't crash/throw with an unset
+    // eventSink_, mirroring the equivalent Logger-gate test's shape.
+}
+
+TEST_CASE("after attachEventSink, a jump publishes a sound message") {
+    std::vector<std::string> received;
+    GameSession session;
+    session.attachEventSink([&received](const std::string& json) { received.push_back(json); });
+    session.engine().loadBoard({{"wR", ".", "."}});
+    session.join("Alice"); // White
+
+    session.handleCommand("Alice", ParsedCommand{true, 'w', 'R', Position{0, 0}, Position{}});
+
+    REQUIRE(received.size() == 1);
+    CHECK(received[0] == "{\"type\":\"sound\",\"name\":\"jump\"}");
+}
+
+TEST_CASE("after attachEventSink, a resolved capture publishes a capture sound message") {
+    std::vector<std::string> received;
+    GameSession session;
+    session.attachEventSink([&received](const std::string& json) { received.push_back(json); });
+    session.engine().loadBoard({{"wR", "bN", "."}});
+    session.join("Alice"); // White
+
+    session.handleCommand("Alice", ParsedCommand{false, 'w', 'R', Position{0, 0}, Position{0, 1}});
+    session.engine().wait(1000); // resolve the capture
+
+    bool sawMoveSound = false;
+    bool sawCaptureSound = false;
+    for (const auto& json : received) {
+        if (json == "{\"type\":\"sound\",\"name\":\"move\"}") sawMoveSound = true;
+        if (json == "{\"type\":\"sound\",\"name\":\"capture\"}") sawCaptureSound = true;
+    }
+    CHECK(sawMoveSound);
+    CHECK(sawCaptureSound);
+}
+
+TEST_CASE("after attachEventSink, a king capture publishes a lifecycle-end message with the result") {
+    std::vector<std::string> received;
+    GameSession session;
+    session.attachEventSink([&received](const std::string& json) { received.push_back(json); });
+    session.engine().loadBoard({{"wR", "bK"}});
+    session.join("Alice"); // White
+
+    session.handleCommand("Alice", ParsedCommand{false, 'w', 'R', Position{0, 0}, Position{0, 1}});
+    session.engine().wait(1000);
+
+    bool sawLifecycleEnd = false;
+    for (const auto& json : received) {
+        if (json == "{\"type\":\"lifecycle\",\"phase\":\"end\",\"result\":\"White Wins\"}") sawLifecycleEnd = true;
+    }
+    CHECK(sawLifecycleEnd);
+}
+
+TEST_CASE("after attachEventSink, resign publishes a lifecycle-end message") {
+    std::vector<std::string> received;
+    GameSession session;
+    session.attachEventSink([&received](const std::string& json) { received.push_back(json); });
+    session.engine().loadBoard({{"wR", "bN", "."}});
+    session.join("Alice"); // White
+    session.join("Bob");   // Black
+
+    session.handleResign("Alice");
+
+    REQUIRE(received.size() == 1);
+    CHECK(received[0] == "{\"type\":\"lifecycle\",\"phase\":\"end\",\"result\":\"Black Wins\"}");
+}
+
+TEST_CASE("after attachEventSink, announceStart publishes a lifecycle-start message with no result field") {
+    std::vector<std::string> received;
+    GameSession session;
+    session.attachEventSink([&received](const std::string& json) { received.push_back(json); });
+    session.engine().loadBoard({{"wR", "bN", "."}});
+
+    session.engine().announceStart();
+
+    REQUIRE(received.size() == 1);
+    CHECK(received[0] == "{\"type\":\"lifecycle\",\"phase\":\"start\"}");
+}
+
 // Task B2: color assignment. Pure decision, decoupled from sockets/JSON -
 // the wire-format parsing/dispatch and response framing that turns this
 // into a real message live in WebSocketServer.cpp (networking glue,

@@ -127,6 +127,17 @@
 // wouldn't be a correctness bug, but the broadcast would keep showing a
 // live countdown on a session that's already over in the meantime.
 //
+// Task G4: discrete event push. createSession() attaches an event sink
+// (GameSession::attachEventSink()) that broadcasts each pre-serialized
+// onSound/onGameLifecycle JSON message to every connection currently in
+// that session (broadcastToSession() - the same per-connection send loop
+// broadcastState() itself uses for the periodic full-state payload). This
+// is what makes a capture's sound cue or a resign/win's lifecycle-end
+// reach clients the instant it happens, rather than only being inferable
+// a tick later from the next broadcastState() call (the periodic
+// snapshot payload has no sound field at all, and gameOver flipping true
+// is otherwise the only signal a lifecycle "end" ever produced).
+//
 // This is the one place in server/ that touches websocketpp/Asio
 // directly, so unlike GameCommandParser/GameSession/GameStateSerializer
 // it is NOT dual-compiled - excluded from the Makefile build via
@@ -291,6 +302,11 @@ private:
     // Broadcasts one session's state to only that session's own
     // connections - each session ticks and broadcasts independently.
     void broadcastState(int sessionId);
+    // Task G4: the actual per-connection send loop, factored out of
+    // broadcastState() so createSession()'s event-sink lambda (discrete
+    // sound/lifecycle pushes) can reuse the exact same
+    // try/catch-a-dead-handle behavior instead of duplicating it.
+    void broadcastToSession(int sessionId, const std::string& json);
 
     // Task D3 connection-lifecycle handlers, one per wire message kind
     // reachable before a connection is in a session (see the class

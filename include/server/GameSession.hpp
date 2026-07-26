@@ -3,6 +3,7 @@
 #include "GameEngine.hpp"
 #include "GameCommandParser.hpp"
 #include "Logger.hpp"
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -72,6 +73,13 @@ struct JoinResult {
 class GameSession {
     GameEngine engine_;
     Logger* logger_ = nullptr;
+    // Task G4: optional discrete-event push to clients, additive to
+    // logger_ - see attachEventSink() below for what it's subscribed to
+    // and why. A std::function (not a Logger*-style pointer) since the
+    // real subscriber (WebSocketServer) needs to close over a session id
+    // to know which connections to broadcast to, not just hold a shared
+    // object reference.
+    std::function<void(const std::string&)> eventSink_;
     bool whiteJoined_ = false;
     bool blackJoined_ = false;
     std::string whiteUsername_;
@@ -97,6 +105,25 @@ public:
 
     GameEngine& engine() { return engine_; }
     void attachLogger(Logger& logger) { logger_ = &logger; }
+    // Task G4: pushes two of the four EventBus categories to clients as
+    // discrete messages the instant they happen, instead of only being
+    // inferable a tick later from the periodic snapshot broadcast -
+    // onSound (today reaches no networked client at all; A4 deliberately
+    // excluded sound from GameStateSerializer, same bucket as
+    // captureFlashes) and onGameLifecycle (start/end - meaningful
+    // one-shot cues, and what makes a resign (G3) or a king-capture win
+    // show up immediately rather than only via gameOver flipping on the
+    // next tick). Deliberately NOT onMoveLogged/onScoreUpdated - both are
+    // already reflected within one tick via the existing snapshot
+    // broadcast, so a discrete push there would shave latency but add no
+    // new capability (see docs/tasks/server-phase-plan.md's Phase G).
+    // Gated the same way logger_ is (a default-constructed GameSession,
+    // used throughout the test suite, stays silent unless this is
+    // called) - the sink receives a small pre-serialized JSON string per
+    // event, keeping this class free of any JSON library dependency
+    // (same "caller gets a plain string" convention GameStateSerializer.hpp
+    // already established for the periodic broadcast).
+    void attachEventSink(std::function<void(const std::string&)> sink) { eventSink_ = std::move(sink); }
 
     // Task E2: `username` is the identity of the connection that actually
     // sent this command (resolved by WebSocketServer from the sending

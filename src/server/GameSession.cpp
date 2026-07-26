@@ -23,9 +23,22 @@ GameSession::GameSession() {
         std::string message = "lifecycle phase=" + e.phase;
         if (e.phase == "end") message += " result=" + e.result;
         logEvent(message);
+        // Task G4: phase/result are both internally-controlled ("start"/
+        // "end", "White Wins"/"Black Wins"/"Draw") - never user input, so
+        // plain concatenation needs no escaping, same reasoning the sound
+        // event below relies on.
+        if (eventSink_) {
+            std::string json = "{\"type\":\"lifecycle\",\"phase\":\"" + e.phase + "\"";
+            if (e.phase == "end") json += ",\"result\":\"" + e.result + "\"";
+            json += "}";
+            eventSink_(json);
+        }
     });
     engine_.events().onSound.subscribe([this](const SoundEvent& e) {
         logEvent("sound name=" + e.name);
+        // Task G4: e.name is one of a small fixed set of internal sound
+        // asset names ("move"/"capture"/"jump") - never user input.
+        if (eventSink_) eventSink_("{\"type\":\"sound\",\"name\":\"" + e.name + "\"}");
     });
 }
 

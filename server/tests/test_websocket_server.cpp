@@ -41,19 +41,29 @@ json login(WsTestClient& c, const std::string& username, const std::string& pass
 // don't-trust-a-fixed-delay reasoning the production code itself uses for
 // its real timers (A5/D3/D4).
 template <typename Predicate>
-std::optional<json> waitForBoardMatching(WsTestClient& c, Predicate pred, int timeoutMs) {
+std::optional<json> waitForMessageMatching(WsTestClient& c, Predicate pred, int timeoutMs) {
     auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
     while (std::chrono::steady_clock::now() < deadline) {
         auto msg = c.waitForMessage(100);
         if (!msg) continue;
         try {
             json j = json::parse(*msg);
-            if (j.contains("board") && pred(j)) return j;
+            if (pred(j)) return j;
         } catch (const json::parse_error&) {
             // non-JSON shouldn't happen from this server - ignore defensively
         }
     }
     return std::nullopt;
+}
+
+// Same as waitForMessageMatching, restricted to the periodic full-state
+// broadcasts (Task G4 added discrete non-"board" messages - sound/
+// lifecycle pushes - into the same connection's stream, so tests that
+// specifically want a state snapshot need to filter those out explicitly
+// rather than accidentally matching one).
+template <typename Predicate>
+std::optional<json> waitForBoardMatching(WsTestClient& c, Predicate pred, int timeoutMs) {
+    return waitForMessageMatching(c, [&](const json& j) { return j.contains("board") && pred(j); }, timeoutMs);
 }
 
 // Drains board-bearing messages currently queued (plus whatever arrives
@@ -305,4 +315,59 @@ TEST_CASE("WebSocketServer: a spectator's resign is rejected without ending the 
     auto state = latestBoardState(creator, 400);
     REQUIRE(state.has_value());
     CHECK((*state)["gameOver"] == false);
+}
+
+TEST_CASE("WebSocketServer: matching pushes a discrete lifecycle-start message, and a real capture pushes a discrete sound message") {
+    ServerFixture fx;
+
+    WsTestClient white(fx.port());
+    login(white, "G4White", "pw");
+    white.send(json{{"type", "play"}}.dump());
+    white.waitForMessage(); // "searching"
+
+    WsTestClient black(fx.port());
+    login(black, "G4Black", "pw");
+    black.send(json{{"type", "play"}}.dump());
+    black.waitForMessage(); // "joined" for black
+    white.waitForMessage(); // "joined" for white
+
+    // Task G4: announceStart() fires the instant both players are matched
+    // (handleMatch() calls it right after both join() calls, Task E3) - the
+    // discrete lifecycle-start push should already be sitting in the
+    // queue, not something only inferable later from the snapshot (which
+    // has no lifecycle field at all).
+    auto lifecycleStart = waitForMessageMatching(
+        white,
+        [](const json& j) { return j.value("type", "") == "lifecycle" && j.value("phase", "") == "start"; },
+        1000);
+    REQUIRE(lifecycleStart.has_value());
+
+    // Real two-move sequence to set up a real capture - the exact
+    // e2e4/d7d5/e4d5 sequence Task B4's own manual verification used.
+    white.send("WPe2e4");
+    black.send("BPd7d5");
+
+    auto bothLanded = waitForBoardMatching(
+        white, [](const json& j) { return j["board"][4][4] == "wP" && j["board"][3][3] == "bP"; }, 4000);
+    REQUIRE(bothLanded.has_value());
+
+    // A freshly-landed piece enters a short/long rest cooldown (up to
+    // RealTimeArbiter's longRestMs_ = 800ms) during which a new move from
+    // it is a silent no-op, same "shape/path/timing legality" category
+    // GameSession's own handleCommand() comment documents - bothLanded
+    // above only proves the piece arrived, not that its rest window (if
+    // any) already elapsed.
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+    white.send("WPe4d5");
+
+    // The capture's sound cue reaches no networked client at all without
+    // Task G4 - GameStateSerializer deliberately excludes sound (A4), so
+    // this discrete push is the only way a capture is ever audible over
+    // the wire. Checked via black's own connection - the push broadcasts
+    // to every connection in the session, not just the mover's.
+    auto captureSound = waitForMessageMatching(
+        black, [](const json& j) { return j.value("type", "") == "sound" && j.value("name", "") == "capture"; },
+        4000);
+    REQUIRE(captureSound.has_value());
 }
