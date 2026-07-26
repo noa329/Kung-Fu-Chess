@@ -189,6 +189,73 @@ TEST_CASE("each player can only command their own color") {
     CHECK(session.handleCommand("Bob", whiteMove).ok == false);
 }
 
+// Task G3: voluntary resign - no claimed color on the wire, colorOf(username)
+// alone decides who (if anyone) this resigns.
+
+TEST_CASE("handleResign ends the game in favor of the other color, either color resigning") {
+    GameSession whiteResigns;
+    whiteResigns.engine().loadBoard({{"wR", "bN", "."}});
+    whiteResigns.join("Alice"); // White
+    whiteResigns.join("Bob");   // Black
+    CHECK(whiteResigns.handleResign("Alice").ok == true);
+    CHECK(whiteResigns.engine().snapshot().gameOver == true);
+    CHECK(whiteResigns.engine().snapshot().result == "Black Wins");
+
+    GameSession blackResigns;
+    blackResigns.engine().loadBoard({{"wR", "bN", "."}});
+    blackResigns.join("Alice"); // White
+    blackResigns.join("Bob");   // Black
+    CHECK(blackResigns.handleResign("Bob").ok == true);
+    CHECK(blackResigns.engine().snapshot().gameOver == true);
+    CHECK(blackResigns.engine().snapshot().result == "White Wins");
+}
+
+TEST_CASE("handleResign fires the lifecycle end event, same as a king capture would") {
+    std::ostringstream sink;
+    Logger logger({&sink});
+    GameSession session;
+    session.attachLogger(logger);
+    session.engine().loadBoard({{"wR", "bN", "."}});
+    session.join("Alice");
+    session.join("Bob");
+
+    session.handleResign("Alice");
+    CHECK(sink.str().find("lifecycle phase=end result=Black Wins") != std::string::npos);
+}
+
+TEST_CASE("handleResign rejects a spectator or unjoined username without ending the game") {
+    GameSession session;
+    session.engine().loadBoard({{"wR", "bN", "."}});
+    session.join("Alice"); // White
+    session.join("Bob");   // Black
+    session.join("Carol"); // spectator (3rd join, Task E1)
+
+    auto spectatorResult = session.handleResign("Carol");
+    CHECK(spectatorResult.ok == false);
+    CHECK(spectatorResult.error == "ERROR NOT_A_PLAYER");
+    CHECK(session.engine().snapshot().gameOver == false);
+
+    auto strangerResult = session.handleResign("NeverJoined");
+    CHECK(strangerResult.ok == false);
+    CHECK(strangerResult.error == "ERROR NOT_A_PLAYER");
+    CHECK(session.engine().snapshot().gameOver == false);
+}
+
+TEST_CASE("handleResign on an already-finished game is a safe no-op") {
+    GameSession session;
+    session.engine().loadBoard({{"wR", "bN", "."}});
+    session.join("Alice"); // White
+    session.join("Bob");   // Black
+
+    CHECK(session.handleResign("Alice").ok == true);
+    CHECK(session.engine().snapshot().result == "Black Wins");
+
+    // Bob "resigning" after Alice already did doesn't flip the result -
+    // GameEngine::resign() itself no-ops once gameOver is already true.
+    CHECK(session.handleResign("Bob").ok == true);
+    CHECK(session.engine().snapshot().result == "Black Wins");
+}
+
 // Task A6: GameSession subscribes engine_.events() to an optional Logger,
 // gated so a default-constructed GameSession (used throughout every test
 // above) stays silent unless attachLogger() is called - these tests are

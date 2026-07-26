@@ -234,3 +234,75 @@ TEST_CASE("WebSocketServer: a closed connection starts a disconnect countdown, a
         white, [](const json& j) { return j["blackDisconnectMs"].is_null(); }, 2000);
     REQUIRE(cleared.has_value());
 }
+
+TEST_CASE("WebSocketServer: resign ends the game and cancels a pending disconnect timer for the other seat") {
+    ServerFixture fx;
+
+    auto whiteUsername = std::string("G2ResignWhite");
+    auto blackUsername = std::string("G2ResignBlack");
+
+    WsTestClient white(fx.port());
+    login(white, whiteUsername, "pw");
+    white.send(json{{"type", "play"}}.dump());
+    white.waitForMessage(); // "searching"
+
+    {
+        WsTestClient black(fx.port());
+        login(black, blackUsername, "pw");
+        black.send(json{{"type", "play"}}.dump());
+        black.waitForMessage(); // "joined" for black
+        white.waitForMessage(); // "joined" for white
+        // black goes out of scope here - its destructor tears the socket
+        // down, giving black's seat a live 20s auto-resign timer by the
+        // time white resigns below. This is what proves the resign path
+        // actually cancels a pending timer (Task G3's resolved open
+        // question) instead of leaving it to fire later into an
+        // already-decided game.
+    }
+
+    auto disconnected = waitForBoardMatching(
+        white, [](const json& j) { return !j["blackDisconnectMs"].is_null(); }, 3000);
+    REQUIRE(disconnected.has_value());
+
+    white.send("resign");
+
+    auto resigned = waitForBoardMatching(
+        white, [](const json& j) { return j["gameOver"] == true; }, 2000);
+    REQUIRE(resigned.has_value());
+    CHECK((*resigned)["result"] == "Black Wins");
+    // The pending disconnect timer for black's seat must be cancelled by
+    // the resign, not just superseded by gameOver - a stale timer left
+    // running would otherwise still be free to fire ~20s later (harmless
+    // since GameEngine::resign() is idempotent, but the broadcast would
+    // keep showing a live countdown on an already-decided game until it
+    // does).
+    CHECK((*resigned)["blackDisconnectMs"].is_null());
+}
+
+TEST_CASE("WebSocketServer: a spectator's resign is rejected without ending the game") {
+    ServerFixture fx;
+
+    WsTestClient creator(fx.port());
+    login(creator, "G2ResignRoomWhite", "pw");
+    creator.send(json{{"type", "create_room"}}.dump());
+    auto createdMsg = creator.waitForMessage();
+    REQUIRE(createdMsg.has_value());
+    std::string roomId = json::parse(*createdMsg).value("roomId", "");
+    REQUIRE_FALSE(roomId.empty());
+
+    WsTestClient joiner(fx.port());
+    login(joiner, "G2ResignRoomBlack", "pw");
+    joiner.send(json{{"type", "join_room"}, {"roomId", roomId}}.dump());
+    joiner.waitForMessage(); // "joined" as black
+
+    WsTestClient spectator(fx.port());
+    login(spectator, "G2ResignRoomSpectator", "pw");
+    spectator.send(json{{"type", "join_room"}, {"roomId", roomId}}.dump());
+    spectator.waitForMessage(); // "joined" as spectator
+
+    spectator.send("resign");
+
+    auto state = latestBoardState(creator, 400);
+    REQUIRE(state.has_value());
+    CHECK((*state)["gameOver"] == false);
+}

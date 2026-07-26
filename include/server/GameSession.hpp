@@ -117,6 +117,16 @@ public:
     // claimed color match the board", which any connection could satisfy
     // by simply claiming whichever color was actually on the square.
     CommandResult handleCommand(const std::string& username, const ParsedCommand& cmd);
+    // Task G3: voluntary resign. Unlike handleCommand, there's no claimed
+    // color to reconcile against the board - colorOf(username) alone
+    // already tells us which seat (if any) this connection actually
+    // holds, so a resign command carries no color/piece/square at all on
+    // the wire. Same ERROR NOT_A_PLAYER rejection as handleCommand for a
+    // spectator/unjoined username; otherwise resigns colorOf(username)'s
+    // seat. GameEngine::resign() already no-ops if the game is already
+    // over, so a stray double-resign (or a resign after the game ended
+    // some other way) is safe without any extra guard here.
+    CommandResult handleResign(const std::string& username);
     // Assigns a role (White/Black/spectator) to an already-authenticated
     // username - see the class comment above for why authentication
     // itself isn't this class's job (or even reachable from here) any

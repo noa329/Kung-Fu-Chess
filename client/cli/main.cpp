@@ -166,7 +166,7 @@ void handleServerMessage(const std::string& payload, LoginState& login) {
         std::string opponent = j.value("opponent", "?");
         std::ostringstream out;
         out << "Reconnected as " << (color == "white" ? "White" : "Black")
-            << ". Playing against " << opponent << ".\n";
+            << ". Playing against " << opponent << ". Type a move, or 'resign' to resign.\n";
         enqueueOutput(out.str());
 
         std::lock_guard<std::mutex> lock(login.mtx);
@@ -189,9 +189,9 @@ void handleServerMessage(const std::string& payload, LoginState& login) {
         std::string opponent = j.value("opponent", "?");
         std::ostringstream out;
         if (color == "white") {
-            out << "You are White. Playing against " << opponent << ".\n";
+            out << "You are White. Playing against " << opponent << ". Type a move, or 'resign' to resign.\n";
         } else if (color == "black") {
-            out << "You are Black. Playing against " << opponent << ".\n";
+            out << "You are Black. Playing against " << opponent << ". Type a move, or 'resign' to resign.\n";
         } else {
             std::string white = j.value("whiteUsername", "?");
             std::string black = j.value("blackUsername", "?");

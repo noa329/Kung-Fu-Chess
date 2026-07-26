@@ -406,23 +406,53 @@ void WebSocketServer::handleDisconnectTimeout(int sessionId, char color) {
                  + " - 20s disconnect window elapsed with no reconnect");
 }
 
+void WebSocketServer::cancelDisconnectTimers(int sessionId) {
+    for (char color : {'w', 'b'}) {
+        auto it = disconnectedSeats_.find({sessionId, color});
+        if (it != disconnectedSeats_.end()) {
+            it->second.timer->cancel();
+            disconnectedSeats_.erase(it);
+        }
+    }
+}
+
+void WebSocketServer::handleResign(int sessionId, const std::string& username) {
+    CommandResult result = sessions_[sessionId]->handleResign(username);
+    if (!result.ok) {
+        std::cout << "rejected resign: " << username << " (" << result.error << ")" << std::endl;
+        return;
+    }
+    cancelDisconnectTimers(sessionId);
+    logger_.log("resign session=" + std::to_string(sessionId) + " username=" + username);
+}
+
 void WebSocketServer::onMessage(websocketpp::connection_hdl hdl, server_t::message_ptr msg) {
     const std::string& payload = msg->get_payload();
 
     auto sessionIdOpt = sessionManager_.sessionFor(hdl);
     if (sessionIdOpt) {
         int sessionId = *sessionIdOpt;
+        // Task E2: identity is resolved once here (not just the command's
+        // own claimed color) - a session-tracked hdl always has an
+        // authenticatedUsers_ entry (login happens before matching/
+        // room-join/reconnect ever adds it to sessionManager_), so the
+        // empty-string fallback is defensive only, mirroring
+        // tryReconnect()'s own "shouldn't happen" stance.
+        auto authIt = authenticatedUsers_.find(hdl);
+        std::string username = authIt != authenticatedUsers_.end() ? authIt->second.username : "";
+
+        // Task G3: "resign" is a reserved literal command, intercepted
+        // before GameCommandParser::parse() - it's unambiguous against
+        // that parser's strict-uppercase move/jump grammar, so there's no
+        // risk of it ever being a real (if malformed) move/jump attempt.
+        if (payload == "resign") {
+            handleResign(sessionId, username);
+            broadcastState(sessionId);
+            return;
+        }
+
         auto parsed = GameCommandParser::parse(payload);
         if (parsed.ok) {
-            // Task E2: handleCommand() now authorizes by sender identity,
-            // not just the command's own claimed color - it needs to know
-            // who actually sent this. A session-tracked hdl always has an
-            // authenticatedUsers_ entry (login happens before matching/
-            // room-join/reconnect ever adds it to sessionManager_), so the
-            // empty-string fallback is defensive only, mirroring
-            // tryReconnect()'s own "shouldn't happen" stance.
-            auto authIt = authenticatedUsers_.find(hdl);
-            std::string username = authIt != authenticatedUsers_.end() ? authIt->second.username : "";
             auto result = sessions_[sessionId]->handleCommand(username, parsed.command);
             if (!result.ok) {
                 std::cout << "rejected command: " << payload << " (" << result.error << ")" << std::endl;

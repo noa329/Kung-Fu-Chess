@@ -111,6 +111,22 @@
 // this class is constructed (SQLite can create the .db file itself but
 // not a missing parent directory).
 //
+// Task G3: voluntary resign. A session-tracked connection sending the
+// literal text "resign" (unambiguous against GameCommandParser's strict-
+// uppercase move/jump grammar - no collision risk) is intercepted in
+// onMessage() *before* GameCommandParser::parse() and routed to
+// handleResign() instead, which resolves the sender's username the same
+// way every other in-session command does and calls
+// GameSession::handleResign(username) - no claimed color on the wire at
+// all, colorOf(username) already tells GameSession which seat (if any)
+// this connection holds. On a successful resign, also cancels any pending
+// 20s disconnect-auto-resign timer for *either* seat of this session
+// (cancelDisconnectTimers()) - without this, a stray timer from an
+// already-disconnected opponent would fire ~20s later into an
+// already-decided game; GameEngine::resign() itself is idempotent so that
+// wouldn't be a correctness bug, but the broadcast would keep showing a
+// live countdown on a session that's already over in the meantime.
+//
 // This is the one place in server/ that touches websocketpp/Asio
 // directly, so unlike GameCommandParser/GameSession/GameStateSerializer
 // it is NOT dual-compiled - excluded from the Makefile build via
@@ -306,6 +322,23 @@ private:
     // resigns that color (GameEngine::resign, Task D4) and broadcasts the
     // resulting game-over state.
     void handleDisconnectTimeout(int sessionId, char color);
+    // Task G3: cancels and erases any disconnectedSeats_ entry (either
+    // color) for sessionId - called after a successful resign so a stale
+    // 20s auto-resign timer never fires into an already-decided game. Not
+    // used by tryReconnect() (that cancels exactly one color's own timer
+    // inline, since it already has the specific iterator) - this is for
+    // the "either/both seats might have a live timer" case a resign can
+    // end up in.
+    void cancelDisconnectTimers(int sessionId);
+
+    // Task G3: routes a session-tracked "resign" text command (intercepted
+    // in onMessage() before GameCommandParser::parse()) to
+    // GameSession::handleResign(), then cancelDisconnectTimers() on
+    // success. Rejections (ERROR NOT_A_PLAYER - a spectator/unjoined
+    // sender) are console-logged only, same as handleCommand()'s own
+    // rejections - no response is sent back to the sender either way,
+    // consistent with every other in-session command.
+    void handleResign(int sessionId, const std::string& username);
 
     // json param is a pre-serialized string, not nlohmann::json - keeps
     // nlohmann out of this header entirely, same convention

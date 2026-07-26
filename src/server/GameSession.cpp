@@ -59,6 +59,13 @@ CommandResult GameSession::handleCommand(const std::string& username, const Pars
     return {true, ""};
 }
 
+CommandResult GameSession::handleResign(const std::string& username) {
+    char color = colorOf(username);
+    if (color == '\0') return fail("ERROR NOT_A_PLAYER");
+    engine_.resign(color);
+    return {true, ""};
+}
+
 JoinResult GameSession::join(const std::string& username) {
     if (!whiteJoined_) {
         whiteJoined_ = true;
