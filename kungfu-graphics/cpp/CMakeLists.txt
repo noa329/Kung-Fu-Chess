@@ -7,9 +7,50 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # CMAKE_CURRENT_SOURCE_DIR here = kung-fu-chess/kungfu-graphics/cpp/
 set(MAIN_PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 
+# docs/tasks/graphics-networked-client-plan.md, Task H1: same websocketpp/
+# Asio dependency server/CMakeLists.txt already validated, fetched here too
+# so the graphics binary (built under MSVC, unlike server/'s MinGW/g++) can
+# link against it. Pinned at the exact same versions for the exact same
+# reason recorded in server/CMakeLists.txt: Asio 1.18.2 (not latest -
+# 1.38.0 removed the deprecated io_service API websocketpp 0.8.2 still
+# depends on) and websocketpp 0.8.2 (its latest tagged release).
+include(FetchContent)
+
+# See server/CMakeLists.txt's identical comment: FetchContent_Populate is
+# deprecated as of CMake 3.30 in favor of FetchContent_MakeAvailable, which
+# doesn't support "fetch source only, never run the dependency's own
+# CMakeLists.txt" - CMP0169=OLD keeps that still-functional behavior
+# instead of a deprecation warning escalating to a future hard error.
+if(POLICY CMP0169)
+    cmake_policy(SET CMP0169 OLD)
+endif()
+
+FetchContent_Declare(asio
+    GIT_REPOSITORY https://github.com/chriskohlhoff/asio.git
+    GIT_TAG        asio-1-18-2
+)
+FetchContent_Populate(asio)
+# asio has no CMakeLists.txt of its own to build - fetch source only, use
+# its include/ directory directly.
+
+FetchContent_Declare(websocketpp
+    GIT_REPOSITORY https://github.com/zaphoyd/websocketpp.git
+    GIT_TAG        0.8.2
+)
+FetchContent_Populate(websocketpp)
+# Deliberately FetchContent_Populate, not FetchContent_MakeAvailable:
+# websocketpp's own CMakeLists.txt looks for Boost and builds its
+# examples/tests, none of which we want. Fetch source only, use its
+# top-level directory as a header-only include path.
+
 # Files under kungfu-graphics/cpp/src (img.cpp, img.hpp, main.cpp)
 file(GLOB LOCAL_SOURCES "src/*.cpp")
 file(GLOB LOCAL_HEADERS "src/*.hpp")
+
+# Task H1: net_smoke_test.cpp has its own main() and its own (non-OpenCV)
+# target below - excluded here or the glob above would pull it into
+# ${PROJECT_NAME} too, colliding with main.cpp's main() at link time.
+list(REMOVE_ITEM LOCAL_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/net_smoke_test.cpp")
 
 # The graphics view (Board_view/Piece_animator/Sprite_animation) lives in
 # the main project tree, not here - explicit glob needed since the one
@@ -97,3 +138,47 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 
 message(STATUS "Found source files: ${SOURCES}")
 message(STATUS "Found header files: ${HEADERS}")
+
+# docs/tasks/graphics-networked-client-plan.md, Task H1: proves websocketpp/
+# Asio/nlohmann actually compile and link under this project's MSVC
+# toolchain (server/ only ever proved this under MinGW/g++ - a real,
+# previously-unverified risk, see the plan). Deliberately a separate,
+# OpenCV-free target from ${PROJECT_NAME} - isolates this proof so it can
+# fail/iterate without risking the existing, working local-play build, and
+# needs none of KungFuChess's own dependencies to do its job (connect to a
+# server and print a line). Superseded by the real include/net_client
+# layer once Task H2 lands - not meant to be the permanent home for this
+# code.
+add_executable(KungFuChessNetSmokeTest src/net_smoke_test.cpp)
+
+target_include_directories(KungFuChessNetSmokeTest PRIVATE
+    ${asio_SOURCE_DIR}/asio/include
+    ${websocketpp_SOURCE_DIR}
+    "${MAIN_PROJECT_ROOT}/third_party/nlohmann"
+)
+
+target_compile_definitions(KungFuChessNetSmokeTest PRIVATE
+    ASIO_STANDALONE
+    # Unlike server/CMakeLists.txt, no _WEBSOCKETPP_CPP11_THREAD_ define
+    # here: that bypasses a blanket rule in websocketpp/common/thread.hpp
+    # that only triggers when __MINGW32__/__MINGW64__ is defined, which is
+    # never true under MSVC - so it would be a no-op here, not a "matches
+    # server/ for consistency" case worth keeping.
+    #
+    # _WEBSOCKETPP_CPP11_STL_ IS needed here, though, and is the first real
+    # MSVC-specific finding from Task H1: MSVC reports __cplusplus as the
+    # pre-C++11 value 199711L by default regardless of /std:c++17(a
+    # documented MSVC quirk - the real value needs an opt-in /Zc:__cplusplus
+    # flag MSVC doesn't set by default), so websocketpp/common/cpp11.hpp's
+    # own __cplusplus >= 201103L feature-detection never fires and
+    # common/random.hpp falls through to a `#include <boost/version.hpp>`
+    # path we don't have - confirmed by a real C1083 "Cannot open include
+    # file: 'boost/version.hpp'" build failure, not a guess. websocketpp's
+    # own cpp11.hpp comment documents this exact define as the intended
+    # escape hatch for a build system that knows better than __cplusplus.
+    _WEBSOCKETPP_CPP11_STL_
+)
+
+if(WIN32)
+    target_link_libraries(KungFuChessNetSmokeTest PRIVATE ws2_32 wsock32)
+endif()
