@@ -61,12 +61,12 @@ std::vector<std::vector<std::string>> loadStartingPosition() {
 }
 } // namespace
 
-WebSocketServer::WebSocketServer(uint16_t port)
+WebSocketServer::WebSocketServer(uint16_t port, const std::string& dbPath, const std::string& logPath)
     : port_(port),
-      logFile_("server.log", std::ios::app),
+      logFile_(logPath, std::ios::app),
       logger_(logFile_.is_open() ? std::vector<std::ostream*>{&std::cout, &logFile_}
                                   : std::vector<std::ostream*>{&std::cout}),
-      database_("data/kungfu_chess.db"),
+      database_(dbPath),
       userRepository_(database_),
       authService_(userRepository_),
       sessionManager_(kMaxConnectionsPerSession) {
@@ -565,6 +565,15 @@ void WebSocketServer::run() {
 
     server_.listen(port_);
     server_.start_accept();
+    listening_ = true;
     std::cout << "listening on " << port_ << std::endl;
     server_.run();
+}
+
+void WebSocketServer::stop() {
+    server_.get_io_service().stop();
+}
+
+bool WebSocketServer::isListening() const {
+    return listening_;
 }

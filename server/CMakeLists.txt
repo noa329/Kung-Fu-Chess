@@ -201,3 +201,71 @@ target_compile_definitions(kungfu_client PRIVATE
 if(WIN32)
     target_link_libraries(kungfu_client PRIVATE ws2_32 wsock32)
 endif()
+
+# Task G2: real-socket automated tests for WebSocketServer.cpp itself -
+# onOpen/onClose/onMessage/broadcastState()/the tick loop, the one class in
+# server/ with zero automated coverage before this (everything else in
+# SERVER_LAYER_SOURCES is pure logic, already dual-compiled and doctested
+# via the root Makefile; WebSocketServer.cpp needs websocketpp/Asio
+# directly, so it only ever builds here). A second, CMake-only doctest
+# binary rather than folding into kungfu_server/kungfu_client - it links
+# WebSocketServer.cpp (which run_tests.exe's Makefile build deliberately
+# can't reach, see SERVER_ONLY_SRC there) plus tests/doctest.h, and drives
+# real WebSocketServer instances over real loopback sockets (server/tests/
+# ServerFixture.hpp + WsTestClient.hpp) - not mocked, so it actually
+# exercises this class instead of a stand-in for it.
+enable_testing()
+
+add_executable(kungfu_server_tests
+    "${MAIN_PROJECT_ROOT}/tests/test_main.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_websocket_server.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/WsTestClient.cpp"
+    ${ENGINE_SOURCES}
+    ${SERVER_LAYER_SOURCES}
+    ${LOGGING_SOURCES}
+    ${PERSISTENCE_SOURCES}
+    ${TEXT_IO_SOURCES}
+    "${MAIN_PROJECT_ROOT}/third_party/sqlite/sqlite3.c"
+    ${SHA256_SRC}
+)
+
+target_include_directories(kungfu_server_tests PRIVATE
+    ${asio_SOURCE_DIR}/asio/include
+    ${websocketpp_SOURCE_DIR}
+    "${MAIN_PROJECT_ROOT}/include/model"
+    "${MAIN_PROJECT_ROOT}/include/movement_rules"
+    "${MAIN_PROJECT_ROOT}/include/real_time_arbiter"
+    "${MAIN_PROJECT_ROOT}/include/rule_engine"
+    "${MAIN_PROJECT_ROOT}/include/controller"
+    "${MAIN_PROJECT_ROOT}/include/game_engine"
+    "${MAIN_PROJECT_ROOT}/include/event_bus"
+    "${MAIN_PROJECT_ROOT}/include/server"
+    "${MAIN_PROJECT_ROOT}/include/logging"
+    "${MAIN_PROJECT_ROOT}/include/persistence"
+    "${MAIN_PROJECT_ROOT}/include/text_io"
+    "${MAIN_PROJECT_ROOT}/third_party/nlohmann"
+    "${MAIN_PROJECT_ROOT}/third_party/sqlite"
+    "${MAIN_PROJECT_ROOT}/third_party/sha256"
+    "${MAIN_PROJECT_ROOT}/tests"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+)
+
+target_compile_definitions(kungfu_server_tests PRIVATE
+    ASIO_STANDALONE
+    _WEBSOCKETPP_CPP11_THREAD_
+)
+
+if(WIN32)
+    target_link_libraries(kungfu_server_tests PRIVATE ws2_32 wsock32)
+endif()
+
+# WORKING_DIRECTORY = repo root: WebSocketServer loads boards/standard.txt
+# and (via ServerFixture) writes throwaway files under data/ using the
+# exact same repo-root-relative paths kungfu_server's real manual-run
+# convention already assumes (see WebSocketServer.cpp's kBoardPath
+# comment) - running the test binary from anywhere else would fail to
+# find the board file, not fail a real assertion.
+add_test(NAME kungfu_server_tests
+    COMMAND kungfu_server_tests
+    WORKING_DIRECTORY "${MAIN_PROJECT_ROOT}"
+)

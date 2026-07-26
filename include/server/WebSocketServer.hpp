@@ -11,6 +11,7 @@
 #include "Database.hpp"
 #include "UserRepository.hpp"
 #include "AuthService.hpp"
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <chrono>
@@ -122,11 +123,33 @@ public:
     using server_t = websocketpp::server<websocketpp::config::asio>;
     using hdl_compare = std::owner_less<websocketpp::connection_hdl>;
 
-    explicit WebSocketServer(uint16_t port);
+    // Task G2: dbPath/logPath are overridable (default = the real
+    // callsite's exact prior behavior, server/main.cpp passes neither) so
+    // the new socket-level test suite can point each test at its own
+    // throwaway file instead of the real dev data/kungfu_chess.db and
+    // server.log every test run would otherwise append to.
+    explicit WebSocketServer(uint16_t port, const std::string& dbPath = "data/kungfu_chess.db",
+                              const std::string& logPath = "server.log");
 
     // Blocks, running the asio event loop (accept + message handling +
-    // the periodic engine tick) until the process is killed.
+    // the periodic engine tick) until the process is killed, or until
+    // stop() is called from another thread (Task G2 - lets a test harness
+    // shut a real instance down deterministically instead of only ever
+    // running until the process dies).
     void run();
+
+    // Task G2: unblocks a concurrent run() call by stopping the
+    // underlying asio io_service - safe to call from another thread
+    // (asio's own documented guarantee for io_service::stop()). This is
+    // an abrupt stop (pending async work is simply never dispatched), not
+    // a graceful drain - fine for test teardown, not meant for
+    // production shutdown (nothing currently calls it outside tests).
+    void stop();
+
+    // True once run() has actually started listening/accepting - a test
+    // harness starting the server on a background thread polls this
+    // instead of assuming the thread has reached that point yet.
+    bool isListening() const;
 
 private:
     // Task E3: raised from 2 (players only) to accommodate spectators too
@@ -182,6 +205,11 @@ private:
 
     uint16_t port_;
     server_t server_;
+    // Task G2: flipped true right after start_accept() in run(), read by
+    // isListening(). Atomic since it's written on the server's own
+    // io_service thread (in a test harness) and read from the test's main
+    // thread.
+    std::atomic<bool> listening_{false};
     // Opened before logger_ (member init order = declaration order) so the
     // stream is valid by the time Logger's sink list references it -
     // logFile_ must outlive logger_, and logger_ must outlive every
