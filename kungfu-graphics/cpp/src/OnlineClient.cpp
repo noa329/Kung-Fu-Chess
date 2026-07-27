@@ -1,4 +1,5 @@
 #include "OnlineClient.hpp"
+#include "GameStateDeserializer.hpp"
 #include <websocketpp/config/asio_no_tls_client.hpp>
 #include <websocketpp/client.hpp>
 #include <nlohmann/json.hpp>
@@ -15,6 +16,7 @@ struct OnlineClient::Impl {
     std::mutex mtx;
     std::optional<bool> connectionOpened;
     std::optional<OnlineClient::ServerResponse> pendingResponse;
+    std::optional<GameSnapshot> latestSnapshot; // Task H5, see pollGameState()
     std::atomic<bool> connected{false};
     bool connectCalled = false;
 
@@ -73,10 +75,22 @@ struct OnlineClient::Impl {
             r.color = j.value("color", std::string("white"));
             r.roomId = j.value("roomId", std::string("?"));
             pendingResponse = r;
+        } else if (type.empty()) {
+            // Task H5: the periodic, untyped state-tick broadcast - only
+            // ever sent once this connection is inside a session (after a
+            // successful match/room-join). GameStateDeserializer does its
+            // own JSON parse + "has a board key" check internally, so this
+            // just hands it the raw payload rather than re-deriving that
+            // check from `j` above. Overwrites the single "latest" slot
+            // (see pollGameState()'s own comment) rather than queuing.
+            if (auto snap = GameStateDeserializer::deserialize(payload)) {
+                std::lock_guard<std::mutex> lock(mtx);
+                latestSnapshot = std::move(snap);
+            }
         }
-        // Anything else (an untyped state-broadcast tick once a session
-        // exists, or a G4 discrete "sound"/"lifecycle" push) is
-        // deliberately ignored here - see this class's header comment.
+        // A G4 discrete "sound"/"lifecycle" push (type == "sound" or
+        // "lifecycle") is still deliberately ignored here - see this
+        // class's header comment; that's Task H6's job.
     }
 
     void send(const nlohmann::json& j) {
@@ -87,6 +101,14 @@ struct OnlineClient::Impl {
             // connection here - isConnected() already reports the socket
             // as down via the close/fail handlers, which is what
             // runOnlineGame() actually checks.
+        }
+    }
+
+    void sendRaw(const std::string& raw) {
+        try {
+            client.send(hdl, raw, websocketpp::frame::opcode::text);
+        } catch (const websocketpp::exception&) {
+            // Same reasoning as send() above.
         }
     }
 };
@@ -149,6 +171,10 @@ void OnlineClient::sendJoinRoom(const std::string& roomId) {
     impl_->send(nlohmann::json{{"type", "join_room"}, {"roomId", roomId}});
 }
 
+void OnlineClient::sendCommand(const std::string& raw) {
+    impl_->sendRaw(raw);
+}
+
 void OnlineClient::disconnect() {
     if (!impl_->connectCalled) return;
     if (impl_->connected) {
@@ -173,6 +199,14 @@ std::optional<OnlineClient::ServerResponse> OnlineClient::pollResponse() {
     if (!impl_->pendingResponse.has_value()) return std::nullopt;
     ServerResponse result = *impl_->pendingResponse;
     impl_->pendingResponse.reset();
+    return result;
+}
+
+std::optional<GameSnapshot> OnlineClient::pollGameState() {
+    std::lock_guard<std::mutex> lock(impl_->mtx);
+    if (!impl_->latestSnapshot.has_value()) return std::nullopt;
+    GameSnapshot result = std::move(*impl_->latestSnapshot);
+    impl_->latestSnapshot.reset();
     return result;
 }
 

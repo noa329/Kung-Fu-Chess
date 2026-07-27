@@ -9,6 +9,7 @@
 #include "OnlineMenuView.hpp"
 #include "OnlineFlowState.hpp"
 #include "OnlineClient.hpp"
+#include "NetworkController.hpp"
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -84,6 +85,35 @@ void onMouse(int event, int x, int y, int flags, void* userdata) {
     } else if (event == cv::EVENT_RBUTTONDOWN) {
         ctx->controller->handleJump(x - ctx->hud->boardOriginX(), y - ctx->hud->boardOriginY());
     } else if (event == cv::EVENT_MOUSEWHEEL) {
+        ctx->hud->handleScroll(x, y, cv::getMouseWheelDelta(flags));
+    }
+}
+
+// docs/tasks/graphics-networked-client-plan.md, Task H4/H5: online-play
+// gameplay screen's mouse handling - same event/coordinate-correction shape
+// as onMouse() above, but a null `controller` (a spectator - Task H5's own
+// "spectator mode disables click sending entirely") makes every event a
+// silent no-op instead of forwarding to NetworkController.
+struct NetworkMouseContext {
+    NetworkController* controller = nullptr;
+    HudView* hud = nullptr;
+};
+
+void onNetworkMouse(int event, int x, int y, int flags, void* userdata) {
+    auto* ctx = static_cast<NetworkMouseContext*>(userdata);
+    if (!ctx || !ctx->hud) return;
+
+    if (event == cv::EVENT_LBUTTONDOWN) {
+        if (ctx->controller) {
+            ctx->controller->handleClick(x - ctx->hud->boardOriginX(), y - ctx->hud->boardOriginY());
+        }
+    } else if (event == cv::EVENT_RBUTTONDOWN) {
+        if (ctx->controller) {
+            ctx->controller->handleJump(x - ctx->hud->boardOriginX(), y - ctx->hud->boardOriginY());
+        }
+    } else if (event == cv::EVENT_MOUSEWHEEL) {
+        // A spectator (null controller) can still scroll the move-log
+        // panels - only sending commands is gated on having a color.
         ctx->hud->handleScroll(x, y, cv::getMouseWheelDelta(flags));
     }
 }
@@ -188,7 +218,6 @@ std::string describeConnection(const std::string& color, const std::string& oppo
     } else {
         out << "Spectating: " << whiteUsername << " (White) vs " << blackUsername << " (Black).";
     }
-    out << "\nGameplay wiring lands in a later task - press any key to disconnect.";
     return out.str();
 }
 
@@ -212,6 +241,27 @@ void runOnlineGame() {
     OnlineClient client;
     OnlineMenuView view;
     client.connect(SERVER_URI);
+
+    // Task H5: same BoardView/HudView Local Play uses, fed from network
+    // state instead of a local GameEngine - initialized upfront (same as
+    // runLocalGame()) since it doesn't depend on anything network-related,
+    // not lazily on first reaching the game screen.
+    BoardView boardView;
+    if (!boardView.init(ASSETS_ROOT, PIECE_SET)) {
+        std::cerr << "Failed to load board/pieces from \"" << ASSETS_ROOT
+                  << "\" for Online Play. Check KUNGFU_ASSETS_ROOT (see CMakeLists.txt) or ASSETS_ROOT in main.cpp."
+                  << std::endl;
+        return;
+    }
+    HudView hud;
+    // Constructed once myColor is known (Task H4) - absent entirely for a
+    // spectator, who has nothing to send (see NetworkMouseContext's own
+    // null-controller handling above).
+    std::optional<NetworkController> networkController;
+    GameSnapshot currentSnapshot{}; // empty board until the first real tick arrives
+    bool hasSnapshot = false;
+    int64 lastTick = cv::getTickCount();
+    const double tickFreq = cv::getTickFrequency();
 
     std::string screen = "connecting";
     std::string pendingAction;
@@ -295,8 +345,27 @@ void runOnlineGame() {
                 roomId = resp->roomId;
                 whiteUsername = resp->whiteUsername;
                 blackUsername = resp->blackUsername;
+
+                // Task H4: a spectator never gets a click-sending
+                // controller - GameSession::handleCommand() would reject
+                // their commands anyway (ERROR NOT_A_PLAYER), but this
+                // keeps clicks from even trying to build one.
+                if (myColor == "white" || myColor == "black") {
+                    char colorChar = (myColor == "white") ? 'w' : 'b';
+                    networkController.emplace(client, colorChar, boardView.cellSize());
+                }
+                lastTick = cv::getTickCount(); // dt starts counting from here, not from connect()
             }
         } else if (screen == "status_connected") {
+            // An unexpected server-side close (crash, kicked, network
+            // drop) - route to a dismissible message instead of silently
+            // spinning on a frame that will never update again (see the
+            // plan's threading-model section).
+            if (!client.isConnected()) {
+                screen = "disconnected";
+                continue;
+            }
+
             // Bugfix: the room-creator path can receive a *second* "joined"
             // message here, once an opponent actually joins the room (see
             // WebSocketServer::handleJoinRoom()'s own fix) - the creator's
@@ -312,8 +381,74 @@ void runOnlineGame() {
                     blackUsername = resp->blackUsername;
                 }
             }
-            view.renderStatus(WINDOW_NAME, "Connected",
-                               describeConnection(myColor, opponentName, roomId, whiteUsername, blackUsername), true);
+
+            // Task H5: consume whatever the latest state-tick broadcast
+            // is; a nullopt poll just means no *new* tick arrived this
+            // frame, not that there's nothing to show - keep rendering
+            // currentSnapshot from the last real one either way.
+            if (auto snap = client.pollGameState()) {
+                currentSnapshot = std::move(*snap);
+                hasSnapshot = true;
+            }
+
+            if (!hasSnapshot) {
+                // A room's lone creator, or anyone else, briefly between
+                // "joined" and the session's first broadcastState() tick -
+                // both real (if short-lived) states, not an error.
+                view.renderStatus(WINDOW_NAME, "Connected",
+                                   describeConnection(myColor, opponentName, roomId, whiteUsername, blackUsername)
+                                       + "\nWaiting for the first game state...",
+                                   false);
+                continue;
+            }
+
+            // Task H2 decision: whiteName/blackName never arrive over the
+            // wire (that data belongs to "joined"/room messages, not the
+            // state-tick broadcast) - filled in here from what the login/
+            // join flow already established, closing that gap now that
+            // there's a HUD on screen to show it in.
+            currentSnapshot.whiteName = whiteUsername;
+            currentSnapshot.blackName = blackUsername;
+            // Task H4: GameSnapshot::selected is never sent over the wire
+            // either (Task H2 decision 1) - substituting this client's own
+            // pending click reconstructs the highlight for a real player;
+            // a spectator (no networkController) just never highlights
+            // anything, which is correct - they have no pending click.
+            currentSnapshot.selected =
+                networkController && networkController->hasPendingSelection()
+                    ? networkController->pendingSelection()
+                    : Position{-1, -1};
+
+            int64 now = cv::getTickCount();
+            int dtMs = static_cast<int>((now - lastTick) * 1000.0 / tickFreq);
+            lastTick = now;
+
+            boardView.syncFromSnapshot(currentSnapshot);
+            boardView.update(dtMs);
+
+            Img boardFrame = boardView.render(currentSnapshot);
+            Img frame = hud.compose(boardFrame, currentSnapshot);
+
+            // Static, not a per-frame stack local: cv::setMouseCallback's
+            // registration would otherwise point at freed stack memory the
+            // instant this scope ends - the exact dangling-pointer bug
+            // chooseMode()'s own ModeSelectContext fix (Task H3b) already
+            // found and fixed for the same reason. Mutated in place every
+            // frame instead, matching that fix's pattern.
+            static NetworkMouseContext mouseCtx;
+            mouseCtx.controller = networkController ? &*networkController : nullptr;
+            mouseCtx.hud = &hud;
+            if (networkController) networkController->setSnapshot(&currentSnapshot);
+            Img::on_mouse(WINDOW_NAME, &onNetworkMouse, &mouseCtx);
+
+            int key = frame.show_frame(WINDOW_NAME, 16);
+            if (key == 27) { // ESC - disconnect and return to the Local/Online menu
+                client.disconnect();
+                return;
+            }
+        } else if (screen == "disconnected") {
+            view.renderStatus(WINDOW_NAME, "Disconnected",
+                               "Connection to the server was lost.\nPress any key to go back.", true);
             if (view.consumeBackRequest()) {
                 client.disconnect();
                 return;

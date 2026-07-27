@@ -1,4 +1,5 @@
 #pragma once
+#include "GameEngine.hpp"
 #include <memory>
 #include <optional>
 #include <string>
@@ -24,15 +25,13 @@
 // rather than blocking, so the OpenCV window keeps pumping frames during
 // a real login/matchmaking round trip instead of freezing.
 //
-// Task H3b's own scope stops at "successfully joined" (a match or room
+// Task H3b's own scope stopped at "successfully joined" (a match or room
 // join succeeds) - the connection deliberately stays open past that point
-// per the plan's confirmed decision, but nothing here yet captures the
-// periodic state-tick broadcasts or G4's discrete sound/lifecycle pushes
-// that start arriving once a session exists; they're silently ignored by
-// this class's message handler for now. Task H5/H6 extend this class to
-// actually capture those via GameStateDeserializer/NetworkEventParser
-// (net_client layer, Task H2) - reusing this same connection, not opening
-// a second one.
+// per the plan's confirmed decision. Task H5 extends this class to also
+// capture the periodic state-tick broadcasts via GameStateDeserializer
+// (net_client layer, Task H2) - see pollGameState() below - reusing this
+// same connection, not opening a second one. G4's discrete sound/lifecycle
+// pushes are still silently ignored here - that's Task H6's job.
 class OnlineClient {
 public:
     // Mirrors client/cli/main.cpp's own LoginState fields/meaning exactly,
@@ -69,6 +68,17 @@ public:
     void sendCreateRoom();
     void sendJoinRoom(const std::string& roomId);
 
+    // Task H4: sends a raw game-command string ("WQe2e5"/"JWPe2"/"resign")
+    // directly, not wrapped in JSON - matches GameCommandParser's wire
+    // grammar exactly (include/server/GameCommandParser.hpp), same as
+    // client/cli's own gameplay loop. Only meaningful once inside a session
+    // (after a successful match/room-join); sending this before that just
+    // reaches WebSocketServer::onMessage()'s "not yet in a session" branch,
+    // which silently drops anything that isn't valid login/matchmaking/
+    // room JSON - no response is expected either way, unlike sendLogin()/
+    // sendPlay()/etc above.
+    void sendCommand(const std::string& raw);
+
     // Closes the connection and joins the background thread. Safe to call
     // even if connect() was never called, or was already disconnected -
     // idempotent past the first real call.
@@ -81,6 +91,16 @@ public:
     // Consumes and clears the response to whichever request was last sent -
     // std::nullopt if nothing new has arrived since the last call.
     std::optional<ServerResponse> pollResponse();
+
+    // Task H5: consumes the latest periodic state-tick broadcast, if a new
+    // one arrived since the last poll - std::nullopt otherwise (including
+    // before any session exists, or between ticks). Unlike pollResponse()'s
+    // "exactly one request in flight" assumption, these arrive continuously
+    // once in a session - this is a coalesced "latest value" slot, not a
+    // queue (see the plan's threading-model section), so the caller should
+    // cache whatever it last got and keep rendering that every frame, not
+    // treat a nullopt poll as "nothing to show."
+    std::optional<GameSnapshot> pollGameState();
 
     // Whether the socket is currently open - independent of
     // pollConnectionOpened()'s one-shot initial result, this can flip
