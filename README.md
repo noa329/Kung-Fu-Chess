@@ -54,6 +54,44 @@ is MSVC-ABI only) — unlike the server below, which deliberately avoids
 MSVC. Asset/sound paths are baked in as absolute compile-time defines, so
 the built `.exe` can be run from anywhere, not just the repo root.
 
+Launching `KungFuChess.exe` always opens a **Local Play / Online Play**
+chooser first (click a button, or ESC to quit). Local Play is the
+self-contained single-window game against a `GameEngine` this binary owns
+itself — no server needed. Online Play (below) is additive; picking it
+never affects Local Play's own behavior.
+
+### Online Play
+
+Plays a real game over the wire against `kungfu_server.exe` (step 3 below)
+— the same `GameEngine`/`Controller`/`BoardView`/`HudView` classes as Local
+Play, just fed from the network instead of an in-process engine. **Start
+the server first**: `KungFuChess.exe` connects to a hardcoded
+`ws://127.0.0.1:9002/` (see `SERVER_URI` in `kungfu-graphics/cpp/src/main.cpp`)
+with no command-line option to point it elsewhere.
+
+1. Click **Online Play** at the chooser screen. It connects, then shows a
+   login screen: **Username**/**Password** fields (Tab switches field,
+   Enter submits, ESC goes back). Any not-yet-seen username auto-registers
+   — same auth as `kungfu_client.exe` below, since both talk to the same
+   server.
+2. At the menu, click **Quick Match** (paired with whoever else is
+   searching), **Create Room** (get a shareable room ID — the screen stays
+   up showing it until an opponent actually joins, or you press any key to
+   view the board early), or **Join Room** (enter a room ID someone else
+   created; joining a room that already has two players makes you a
+   spectator instead of a player).
+3. Once matched, the real board renders from network state. **Left-click**
+   a piece, then left-click a destination square to move it (two clicks,
+   combined into one wire command); **right-click** a piece to jump.
+   **Press `R` to resign** (no-op for a spectator). A disconnected
+   opponent shows a live "auto-resign in Ns" countdown on their name bar,
+   clearing automatically if they reconnect within 20s. **ESC** disconnects
+   and returns to the Local/Online chooser.
+
+Run two `KungFuChess.exe` instances (or one `KungFuChess.exe` plus one
+`kungfu_client.exe`, step 4) against the same running server to actually
+play a game — same as the shell client below.
+
 ## 3. Multiplayer server — `kungfu_server.exe`
 
 A headless WebSocket server (login/matchmaking/rooms/spectators,
