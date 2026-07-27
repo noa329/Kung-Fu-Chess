@@ -251,6 +251,9 @@ void runOnlineGame() {
     // background music is a Local Play concern this task doesn't touch.
     SoundManager::instance().setSoundsRoot(SOUNDS_ROOT);
 
+    std::cout << "Left-click a piece, then left-click a destination square to move it." << std::endl;
+    std::cout << "Right-click a piece to make it jump. Press 'R' to resign. Press ESC to disconnect." << std::endl;
+
     // Task H5: same BoardView/HudView Local Play uses, fed from network
     // state instead of a local GameEngine - initialized upfront (same as
     // runLocalGame()) since it doesn't depend on anything network-related,
@@ -268,6 +271,12 @@ void runOnlineGame() {
     // null-controller handling above).
     std::optional<NetworkController> networkController;
     GameSnapshot currentSnapshot{}; // empty board until the first real tick arrives
+    // Task H7: coalesced "latest value" cache, same reasoning/pattern as
+    // currentSnapshot above - a nullopt poll means "no new tick this
+    // frame," not "no one's disconnected," so this has to be cached and
+    // re-passed to hud.compose() every frame, not just on the frames a new
+    // value actually arrives.
+    DisconnectStatus currentDisconnectStatus{};
     bool hasSnapshot = false;
     // Bugfix (regression from H5): a room creator's own board tick can
     // arrive before anyone else joins (handleCreateRoom() broadcasts the
@@ -431,6 +440,13 @@ void runOnlineGame() {
                 hasSnapshot = true;
             }
 
+            // Task H7: same coalescing rule as pollGameState() above - keep
+            // showing the last known countdown on a nullopt poll, don't
+            // treat it as "no one's disconnected."
+            if (auto status = client.pollDisconnectStatus()) {
+                currentDisconnectStatus = *status;
+            }
+
             // Bugfix: only a room creator ever has both a roomId *and* a
             // still-blank opponent at the same time (matchmaking has no
             // roomId at all; a room joiner's own "joined" response already
@@ -494,7 +510,7 @@ void runOnlineGame() {
             boardView.update(dtMs);
 
             Img boardFrame = boardView.render(currentSnapshot);
-            Img frame = hud.compose(boardFrame, currentSnapshot);
+            Img frame = hud.compose(boardFrame, currentSnapshot, currentDisconnectStatus);
 
             // Static, not a per-frame stack local: cv::setMouseCallback's
             // registration would otherwise point at freed stack memory the
@@ -512,6 +528,16 @@ void runOnlineGame() {
             if (key == 27) { // ESC - disconnect and return to the Local/Online menu
                 client.disconnect();
                 return;
+            } else if ((key == 'r' || key == 'R') && networkController) {
+                // Task H7: literal "resign" command, symmetric with
+                // client/cli's own typed "resign" line - GameCommandParser
+                // server-side (Task G3) is the sole source of truth for
+                // validity, so no client-side gameOver/legality check here,
+                // same reasoning client/cli's gameplay loop already uses.
+                // Gated on networkController only so a spectator (no seat
+                // to resign) doesn't send a command the server would just
+                // reject as NOT_A_PLAYER anyway.
+                client.sendCommand("resign");
             }
         } else if (screen == "disconnected") {
             view.renderStatus(WINDOW_NAME, "Disconnected",

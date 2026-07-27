@@ -36,11 +36,20 @@ int HudView::clampScrollOffset(int offset, size_t totalRows, int visible) {
     return offset;
 }
 
-void HudView::drawBar(Img& canvas, int y, int h, int canvasW, const std::string& name, int score) const {
+void HudView::drawBar(Img& canvas, int y, int h, int canvasW, const std::string& name, int score,
+                       std::optional<int> disconnectRemainingMs) const {
     canvas.rectangle(0, y, canvasW, h, cv::Scalar(40, 40, 40, 255), -1);
     std::string text = "Name: " + name + "   Score: " + std::to_string(score);
+    if (disconnectRemainingMs) {
+        // Round up to whole seconds so the display never shows "0s" while
+        // time still genuinely remains (a 1ms-remaining tick truncating to
+        // "0s" would read as already-expired).
+        int secs = (std::max(0, *disconnectRemainingMs) + 999) / 1000;
+        text += "   DISCONNECTED - auto-resign in " + std::to_string(secs) + "s";
+    }
     int textX = std::max(10, canvasW / 2 - static_cast<int>(text.size()) * 4);
-    canvas.put_text(text, textX, y + h / 2 + 6, 0.6, cv::Scalar(255, 255, 255, 255), 1);
+    cv::Scalar color = disconnectRemainingMs ? cv::Scalar(80, 80, 255, 255) : cv::Scalar(255, 255, 255, 255);
+    canvas.put_text(text, textX, y + h / 2 + 6, 0.6, color, 1);
 }
 
 void HudView::drawPanel(Img& canvas, int x, int y, int h, const std::string& header,
@@ -118,7 +127,7 @@ void HudView::drawGameOverBanner(Img& canvas, const GameSnapshot& snap, int boar
     banner.draw_on(canvas, bx, by);
 }
 
-Img HudView::compose(const Img& boardFrame, const GameSnapshot& snap) {
+Img HudView::compose(const Img& boardFrame, const GameSnapshot& snap, const DisconnectStatus& disconnectStatus) {
     int boardW = boardFrame.width();
     int boardH = boardFrame.height();
     lastBoardW_ = boardW;
@@ -138,8 +147,9 @@ Img HudView::compose(const Img& boardFrame, const GameSnapshot& snap) {
     }
 
     // Row 0 is black's back rank, so black reads as the "top" side.
-    drawBar(canvas, 0, TOP_BAR_H, canvasW, snap.blackName, snap.blackScore);
-    drawBar(canvas, canvasH - BOTTOM_BAR_H, BOTTOM_BAR_H, canvasW, snap.whiteName, snap.whiteScore);
+    drawBar(canvas, 0, TOP_BAR_H, canvasW, snap.blackName, snap.blackScore, disconnectStatus.blackRemainingMs);
+    drawBar(canvas, canvasH - BOTTOM_BAR_H, BOTTOM_BAR_H, canvasW, snap.whiteName, snap.whiteScore,
+            disconnectStatus.whiteRemainingMs);
 
     int visible = visibleRows(boardH);
     blackScrollOffset_ = clampScrollOffset(blackScrollOffset_, lastBlackCount_, visible);

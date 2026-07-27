@@ -1,6 +1,7 @@
 #pragma once
 #include "GameEngine.hpp"
 #include "Events.hpp"
+#include "DisconnectStatusDeserializer.hpp"
 #include <memory>
 #include <optional>
 #include <string>
@@ -35,7 +36,10 @@
 // (net_client layer, Task H2) - see pollGameState() below - reusing this
 // same connection, not opening a second one. Task H6 further extends it to
 // queue G4's discrete sound/lifecycle pushes via NetworkEventParser (same
-// net_client layer) - see pollEvents() below.
+// net_client layer) - see pollEvents() below. Task H7 adds one more
+// coalesced side-channel, the per-color disconnect countdown, via
+// DisconnectStatusDeserializer (same net_client layer again) - see
+// pollDisconnectStatus() below.
 class OnlineClient {
 public:
     // Mirrors client/cli/main.cpp's own LoginState fields/meaning exactly,
@@ -114,6 +118,16 @@ public:
     // to skip - see the plan's threading-model section). Empty if nothing
     // arrived.
     std::vector<std::variant<SoundEvent, GameLifecycleEvent>> pollEvents();
+
+    // Task H7: consumes the latest per-color disconnect countdown parsed
+    // off the same periodic state-tick broadcast pollGameState() consumes
+    // (see DisconnectStatusDeserializer.hpp) - coalesced "latest value"
+    // semantics identical to pollGameState()'s own (not a queue, unlike
+    // pollEvents() above): the caller should cache whatever it last got and
+    // keep passing it to HudView::compose() every frame. Both fields go
+    // back to std::nullopt on the very next tick once a disconnected seat
+    // reconnects, since the server simply stops including that field.
+    std::optional<DisconnectStatus> pollDisconnectStatus();
 
     // Whether the socket is currently open - independent of
     // pollConnectionOpened()'s one-shot initial result, this can flip

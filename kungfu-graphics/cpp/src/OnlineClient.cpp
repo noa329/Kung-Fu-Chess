@@ -1,6 +1,7 @@
 #include "OnlineClient.hpp"
 #include "GameStateDeserializer.hpp"
 #include "NetworkEventParser.hpp"
+#include "DisconnectStatusDeserializer.hpp"
 #include <websocketpp/config/asio_no_tls_client.hpp>
 #include <websocketpp/client.hpp>
 #include <nlohmann/json.hpp>
@@ -19,6 +20,7 @@ struct OnlineClient::Impl {
     std::optional<OnlineClient::ServerResponse> pendingResponse;
     std::optional<GameSnapshot> latestSnapshot; // Task H5, see pollGameState()
     std::vector<std::variant<SoundEvent, GameLifecycleEvent>> pendingEvents; // Task H6, see pollEvents()
+    std::optional<DisconnectStatus> latestDisconnectStatus; // Task H7, see pollDisconnectStatus()
     std::atomic<bool> connected{false};
     bool connectCalled = false;
 
@@ -88,6 +90,14 @@ struct OnlineClient::Impl {
             if (auto snap = GameStateDeserializer::deserialize(payload)) {
                 std::lock_guard<std::mutex> lock(mtx);
                 latestSnapshot = std::move(snap);
+                // Task H7: same message, a separate side-channel field set
+                // (plan decision 3) - parsed independently rather than
+                // folded into GameSnapshot, but coalesced the same way
+                // (see pollDisconnectStatus()'s own comment), since it's
+                // continuous per-tick state, not a discrete one-shot event
+                // like G4's sound/lifecycle pushes above.
+                latestDisconnectStatus =
+                    DisconnectStatusDeserializer::deserialize(payload).value_or(DisconnectStatus{});
             }
         } else if (type == "sound" || type == "lifecycle") {
             // Task H6: G4's discrete event pushes - queued (not coalesced),
@@ -223,6 +233,14 @@ std::vector<std::variant<SoundEvent, GameLifecycleEvent>> OnlineClient::pollEven
     std::lock_guard<std::mutex> lock(impl_->mtx);
     std::vector<std::variant<SoundEvent, GameLifecycleEvent>> result;
     result.swap(impl_->pendingEvents);
+    return result;
+}
+
+std::optional<DisconnectStatus> OnlineClient::pollDisconnectStatus() {
+    std::lock_guard<std::mutex> lock(impl_->mtx);
+    if (!impl_->latestDisconnectStatus.has_value()) return std::nullopt;
+    DisconnectStatus result = *impl_->latestDisconnectStatus;
+    impl_->latestDisconnectStatus.reset();
     return result;
 }
 

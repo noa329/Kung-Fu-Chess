@@ -2,9 +2,11 @@
 
 #include <string>
 #include <vector>
+#include <optional>
 #include <opencv2/opencv.hpp>
 #include "img.hpp"
 #include "GameEngine.hpp"
+#include "DisconnectStatusDeserializer.hpp"
 
 /**
  * Pure compositing layer around an already-rendered board frame: draws
@@ -15,8 +17,17 @@
  */
 class HudView {
 public:
-    /** Compose a wider canvas: board frame inset, HUD panels/bars around it. */
-    Img compose(const Img& boardFrame, const GameSnapshot& snap);
+    /**
+     * Compose a wider canvas: board frame inset, HUD panels/bars around it.
+     * `disconnectStatus` is Task H7's additive, defaulted parameter (plan
+     * decision 3) - a per-color "ms until auto-resign" side channel kept
+     * deliberately separate from GameSnapshot (connection-layer state, not
+     * game state; Local Play has no connection at all). Defaulted so this
+     * call site is unchanged for Local Play (runLocalGame()) - only Online
+     * Play ever has a non-default value to pass.
+     */
+    Img compose(const Img& boardFrame, const GameSnapshot& snap,
+                const DisconnectStatus& disconnectStatus = {});
 
     /** Route a mouse-wheel event here (from main's onMouse) to scroll a move-log panel. */
     void handleScroll(int mouseX, int mouseY, int wheelDelta);
@@ -62,7 +73,8 @@ private:
     size_t lastBlackCount_ = 0;
     size_t lastWhiteCount_ = 0;
 
-    void drawBar(Img& canvas, int y, int h, int canvasW, const std::string& name, int score) const;
+    void drawBar(Img& canvas, int y, int h, int canvasW, const std::string& name, int score,
+                 std::optional<int> disconnectRemainingMs) const;
     void drawPanel(Img& canvas, int x, int y, int h, const std::string& header,
                    const std::vector<MoveRecord>& moves, int scrollOffset) const;
     void drawCoordinates(Img& canvas, int boardW, int boardH) const;
