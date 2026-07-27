@@ -1,20 +1,25 @@
 # Kung Fu Chess — graphics client goes networked (TODO / reference plan)
 
-> **Status: in progress, paused after H3b.** **H1, H3a, H2, and H3b are all
-> done** (see their rows below) — the graphics binary now has a real,
-> working login → menu → matchmaking/room-join flow talking to a live
-> server, and stays connected on a status screen afterward for H4/H5 to
-> build on. **Two open verification gaps, both environment/automation
-> issues rather than suspected code problems, and both being closed by the
-> user directly rather than by me finding a workaround**:
-> 1. `run_tests.exe` is now blocked outright by this machine's Smart App
+> **Status: in progress, paused after H3b + a room-flow bugfix.** **H1, H3a,
+> H2, and H3b are all done** (see their rows below) — the graphics binary
+> now has a real, working login → menu → matchmaking/room-join flow talking
+> to a live server, and stays connected on a status screen afterward for
+> H4/H5 to build on. The user's own manual click-through of that flow found
+> **one real bug** (room creator's status screen showed a blank opponent
+> name — see the write-up right after the task table for the full root
+> cause and fix, both server- and client-side), now fixed and verified via
+> a scripted two-connection socket test. **Two open verification items
+> remain, both environment/automation issues rather than suspected code
+> problems, both being closed by the user directly**:
+> 1. `run_tests.exe` is blocked outright by this machine's Smart App
 >    Control/Device Guard policy (a change since H2's own successful
 >    231/231 run) — the user will run it themselves and report pass/fail
 >    for H3b's 11 new `TextFieldInput`/`OnlineFlowState` cases.
 > 2. H3a's own click-through gap is still open, and H3b's live-screen
 >    screenshot verification hit a worse version of the same
 >    desktop-automation flakiness — the user is doing a real manual
->    click-through of the whole Local Play *and* Online Play flow.
+>    click-through of the whole Local Play *and* Online Play flow (this is
+>    what surfaced the room-flow bug above).
 >
 > Pick up at **H4** (networked click handling) or **H5** (wire the render
 > loop to network state) when resuming — both depend on H1/H2, which are
@@ -111,6 +116,15 @@ Resolved during plan review, before any task started:
 | **H6** | Discrete sound/lifecycle wiring for Online Play: the network thread pushes each `sound`/`lifecycle` message onto a small mutex-guarded **queue** (not a single-slot "latest value" — every discrete event must fire, none can be dropped as stale, unlike the periodic full-state tick). The render loop drains it fully every frame and calls `SoundManager::playSound(name + ".wav")` / `hud.playEndAnimation(result)` — same effect as today's local `EventBus` subscribers, different trigger source (queue drain instead of a subscribed callback, since there's no local `EventBus`/`GameEngine` on this path). Local Play keeps its existing direct `EventBus` subscriptions, untouched. | H2, H5 | Pure logic test: a scripted sequence of queued messages dispatches the right calls in the right order. Manual: a real capture over the wire audibly plays the capture sound; a real resign/checkmate triggers the end animation. |
 | **H7** | Resign UI (button or keypress sending the literal `"resign"` string, symmetric with `client/cli`'s typed command) + the disconnect countdown, via the **separate `HudView`-only side-channel struct** confirmed in decision 3 — an additive, defaulted parameter to `HudView::compose()` (e.g. `compose(boardFrame, snap, disconnectStatus = {})`) so the existing Local Play call site (H3a) doesn't need to change at all. | H5 | Manual: a real resign ends the game for both sides; a real opponent disconnect shows a live countdown on the HUD that clears on reconnect (the same three paths D4's own server-side manual verification already proved — this task only proves the client renders what the server already sends correctly). |
 | **H8** | Docs: this file updated with actual task outcomes (mirrors `server-phase-plan.md`'s G1 being written last, documenting final state not intent), plus root `README.md` updated with graphics-client-online build/run instructions once real. | H1–H7 | N/A — documentation only; every command shown re-verified before being written down, matching G1's own stated bar. |
+
+**Real bug found and fixed during the user's own manual click-through of H3b** (not hypothetical — reproduced via a full create-room/join-room pass): the room **creator**'s "Connected" status screen showed `Playing against .` — an empty opponent name — even after a second player actually joined and the game started, while the **joiner** correctly saw the creator's real username. Matchmaking's equivalent screen never had this problem, because `handleMatch()` learns both usernames atomically and sends both connections a `"joined"` message with the opponent already filled in.
+
+Root cause, in two parts, both fixed:
+
+1. **Server (`src/server/WebSocketServer.cpp`/`.hpp`)**: `handleCreateRoom()`'s `room_created` response has no `opponent` field at all — correct, since no one has joined yet — but `handleJoinRoom()` only ever sent the new `"joined"` message to the *joiner*. The creator, already connected and waiting since room creation, was never sent anything at all once the roster completed — a real, previously-latent server-side gap (invisible in `client/cli`, which never displays an opponent name for the room-creator path at all, so nothing ever exercised this before the graphics client's status screen did). Fixed by adding `WebSocketServer::findHdlForUsername(sessionId, username)` (looks up the still-connected `connection_hdl` for a username within a session, via `SessionManager`'s per-session connection list cross-referenced against the existing `authenticatedUsers_` map) and calling it in `handleJoinRoom()` when the 2nd join completes the roster (`result.color == 'b'`) to send White a follow-up `sendJoinedMessage()` — reusing the exact same message shape the joiner already gets, not a new message type. Ordering preserved: both `"joined"` messages (joiner's original, White's new follow-up) are sent before `announceStart()`'s discrete lifecycle-start push, matching the identity-before-general-notification rule G4 already established for `handleMatch()`.
+2. **Client (`kungfu-graphics/cpp/src/main.cpp`)**: even with the server fix, the `"status_connected"` screen's loop never called `client.pollResponse()` again once reached — a follow-up `"joined"` message would have arrived and sat unconsumed forever, so the displayed status text would still never update. Fixed by polling once per frame on that screen and refreshing `opponentName`/`whiteUsername`/`blackUsername` from any response that arrives — a no-op for matchmaking/joiner, both of which already know their opponent the moment this screen is reached.
+
+Verified with a scripted two-connection test (ad hoc, not committed, reusing `scripts/ws_test_client.py`'s handshake/frame helpers — same "real sockets, not real terminals" convention `server-phase-plan.md` already uses for exactly this kind of multi-connection scenario) against a live, freshly-rebuilt `kungfu_server.exe`: connection A creates a room, connection B joins it, and A is confirmed to receive a follow-up `{"type":"joined","color":"white","opponent":"<B's username>",...}` message after the two periodic board ticks — exactly the message the fix adds, with the correct fields. `kungfu_server.exe` (CMake/Ninja) and `KungFuChess` (CMake/MSVC) both rebuilt clean. The client-side polling addition is a small, in-pattern change (mirrors every other screen's existing `pollResponse()` use) rather than new machinery, and wasn't independently re-verified by screenshot given this session's established GUI-automation flakiness — the user's own follow-up manual click-through is what confirms the visual result.
 
 ---
 

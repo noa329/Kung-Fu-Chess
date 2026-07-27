@@ -297,6 +297,21 @@ void runOnlineGame() {
                 blackUsername = resp->blackUsername;
             }
         } else if (screen == "status_connected") {
+            // Bugfix: the room-creator path can receive a *second* "joined"
+            // message here, once an opponent actually joins the room (see
+            // WebSocketServer::handleJoinRoom()'s own fix) - the creator's
+            // first (and, before this fix, only) "joined"-equivalent
+            // response is "room_created", sent back when the room is still
+            // empty, so its opponent field is necessarily blank. Matchmaking
+            // and the room-joiner path never send a second response here -
+            // this poll is a harmless no-op for them, not a new wait.
+            if (auto resp = client.pollResponse()) {
+                if (resp->ok) {
+                    opponentName = resp->opponent;
+                    whiteUsername = resp->whiteUsername;
+                    blackUsername = resp->blackUsername;
+                }
+            }
             view.renderStatus(WINDOW_NAME, "Connected",
                                describeConnection(myColor, opponentName, roomId, whiteUsername, blackUsername), true);
             if (view.consumeBackRequest()) {

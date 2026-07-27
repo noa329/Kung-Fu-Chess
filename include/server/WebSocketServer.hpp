@@ -17,6 +17,7 @@
 #include <chrono>
 #include <fstream>
 #include <map>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -324,6 +325,25 @@ private:
     // `{"type":"joined",...}` response is built, so a matchmaking join and
     // a room join (player or spectator) all produce the identical shape.
     void sendJoinedMessage(websocketpp::connection_hdl hdl, int sessionId, const std::string& username, char color);
+
+    // Bugfix (found during Task H3b's manual verification of the graphics
+    // client): unlike matchmaking's handleMatch(), which knows both hdls at
+    // once and sends both a "joined" message, handleCreateRoom() only ever
+    // has one connection (the creator) and no opponent yet, so its
+    // `room_created` response has no opponent field to send at all - not a
+    // bug by itself. The actual gap was in handleJoinRoom(): when the 2nd
+    // join completes the roster, only the *joiner* got a "joined" message
+    // (with the creator's name as their opponent) - the creator, already
+    // connected and waiting since room creation, was never told anyone had
+    // joined at all, leaving their own "opponent" permanently blank. Finds
+    // the still-connected hdl for `username` within `sessionId` (via
+    // SessionManager's own per-session connection list, cross-referenced
+    // against authenticatedUsers_ for the hdl->username mapping already
+    // used everywhere else in this class) so handleJoinRoom() can push the
+    // creator a follow-up "joined" message once their opponent is actually
+    // known. nullopt if that seat's connection isn't found (e.g. it
+    // disconnected in the meantime) - defensive, not expected in practice.
+    std::optional<websocketpp::connection_hdl> findHdlForUsername(int sessionId, const std::string& username);
 
     // Task D4: reconnect-vs-fresh-login branch, split out of handleLogin()
     // once auth succeeds. True (and fully handled: hdl re-added to the

@@ -388,17 +388,43 @@ void WebSocketServer::handleJoinRoom(websocketpp::connection_hdl hdl, const std:
     // roster is complete - the deferred counterpart to handleMatch()'s own
     // immediate announceStart() call (see the class comment's Task E3
     // paragraph). A 3rd+ join (spectator) never re-fires this.
-    //
-    // Task G4: called after sendJoinedMessage() above, same identity-
-    // before-general-notification ordering reasoning handleMatch() now
-    // documents - announceStart()'s discrete lifecycle-start push
-    // broadcasts to this connection too (it's the joiner completing the
-    // roster), so it needs to land after this connection's own "joined".
     if (result.color == 'b') {
+        // Bugfix (found during Task H3b's manual verification): the
+        // creator (White) has been connected and waiting since
+        // handleCreateRoom(), whose `room_created` response has no
+        // opponent field at all - there wasn't one yet. Without this, White
+        // never learns who joined - their own "joined" response's opponent
+        // field stays permanently blank, unlike matchmaking's handleMatch()
+        // where both sides are known atomically. Sends White the same
+        // "joined" shape the joiner just received above, now that the
+        // opponent is actually known - same findHdlForUsername() lookup
+        // reasoning documented on its own declaration.
+        std::string whiteUsername = sessions_[sessionId]->usernameFor('w');
+        if (auto whiteHdl = findHdlForUsername(sessionId, whiteUsername)) {
+            sendJoinedMessage(*whiteHdl, sessionId, whiteUsername, 'w');
+        }
+
+        // Task G4: called after both sendJoinedMessage() calls above, same
+        // identity-before-general-notification ordering reasoning
+        // handleMatch() documents - announceStart()'s discrete
+        // lifecycle-start push broadcasts to this session's connections
+        // too (including White's, now freshly notified), so it needs to
+        // land after both connections' own "joined" messages.
         sessions_[sessionId]->engine().announceStart();
     }
 
     broadcastState(sessionId);
+}
+
+std::optional<websocketpp::connection_hdl> WebSocketServer::findHdlForUsername(int sessionId,
+                                                                                const std::string& username) {
+    for (const auto& hdl : sessionManager_.connectionsIn(sessionId)) {
+        auto it = authenticatedUsers_.find(hdl);
+        if (it != authenticatedUsers_.end() && it->second.username == username) {
+            return hdl;
+        }
+    }
+    return std::nullopt;
 }
 
 void WebSocketServer::startDisconnectTimer(int sessionId, char color) {
