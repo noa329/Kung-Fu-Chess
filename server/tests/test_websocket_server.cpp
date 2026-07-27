@@ -371,3 +371,67 @@ TEST_CASE("WebSocketServer: matching pushes a discrete lifecycle-start message, 
         4000);
     REQUIRE(captureSound.has_value());
 }
+
+// Task I3: real-socket proof of the sparse activeMoves field (Task I1's
+// GameStateSerializer addition, Task I2's GameStateDeserializer inverse) -
+// the layer the pure serializer/deserializer doctests (run_tests.exe)
+// can't reach, since it needs an actual ticking WebSocketServer broadcast
+// loop, not a hand-built GameSnapshot. See
+// docs/tasks/wire-protocol-move-progress-plan.md for the sparse-encoding
+// reasoning this proves against a live server.
+static bool activeMovesHasE2e4MidFlight(const json& j) {
+    if (!j["activeMoves"].is_array()) return false;
+    for (const auto& entry : j["activeMoves"]) {
+        json from = entry.value("from", json::object());
+        json to = entry.value("to", json::object());
+        if (from.value("row", -1) == 6 && from.value("col", -1) == 4 &&
+            to.value("row", -1) == 4 && to.value("col", -1) == 4) {
+            double p = entry.value("progress", -1.0);
+            return p > 0.0 && p < 1.0;
+        }
+    }
+    return false;
+}
+
+TEST_CASE("WebSocketServer: activeMoves is empty at rest and reports a real in-flight move's progress") {
+    ServerFixture fx;
+
+    WsTestClient white(fx.port());
+    WsTestClient black(fx.port());
+    login(white, "I3White", "pw");
+    login(black, "I3Black", "pw");
+
+    white.send(json{{"type", "play"}}.dump());
+    white.waitForMessage(); // "searching"
+    black.send(json{{"type", "play"}}.dump());
+    black.waitForMessage(); // "joined" for black
+    white.waitForMessage(); // "joined" for white
+
+    // Starting position, same board[6][4]=="wP"/board[4][4]=="." fixture
+    // the matchmaking test above already establishes - nothing is mid-move
+    // yet, so activeMoves should be present but empty.
+    auto starting = waitForBoardMatching(
+        white, [](const json& j) { return j["board"][6][4] == "wP"; }, 2000);
+    REQUIRE(starting.has_value());
+    REQUIRE(starting->contains("activeMoves"));
+    CHECK((*starting)["activeMoves"].empty());
+
+    white.send("WPe2e4");
+
+    // e2 (board[6][4]) -> e4 (board[4][4]), same coordinates the
+    // matchmaking test above uses. Real travel-time move (~2s simulated,
+    // fed from real elapsed ticks) - poll for a tick reporting 0 < progress
+    // < 1 rather than assuming a fixed mid-flight timestamp.
+    auto midMove = waitForBoardMatching(white, activeMovesHasE2e4MidFlight, 2500);
+    REQUIRE(midMove.has_value());
+
+    // Once the move actually lands, cellStates[6][4] is no longer "move"
+    // (the landed piece enters a rest cooldown instead - see the G4 test
+    // above's own comment on this) - so activeMoves should stop reporting
+    // it, proving this is a live per-tick signal, not something that gets
+    // stuck on once set.
+    auto resolved = waitForBoardMatching(
+        black, [](const json& j) { return j["board"][4][4] == "wP"; }, 4000);
+    REQUIRE(resolved.has_value());
+    CHECK_FALSE(activeMovesHasE2e4MidFlight(*resolved));
+}
