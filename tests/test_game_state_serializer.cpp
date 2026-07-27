@@ -8,11 +8,14 @@
 // alongside GameSnapshot, not a replacement for it (the local graphics
 // renderer keeps reading GameSnapshot directly at 60fps; this is only for
 // the network wire). Included: board tokens, cellStates, scores, move
-// history, gameOver/result. Excluded, on purpose: moveTargets/moveProgress/
-// selected (render-loop-only, meaningless without a 60fps client tick) and
-// captureFlashes (same category - the text-only shell client, Phase B, has
-// nothing to show a capture flash with; revisit only if/when the graphics
-// binary gets network support, a separate unscoped future task).
+// history, gameOver/result, and (Task I1) a sparse activeMoves list for
+// exactly the cells with cellStates=="move" - see
+// docs/tasks/wire-protocol-move-progress-plan.md. Excluded, on purpose:
+// selected (per-connection UI-gesture state, not shared game state) and
+// captureFlashes (render-loop-only decoration - the text-only shell
+// client, Phase B, has nothing to show a capture flash with; revisit only
+// if/when it turns out to matter for the graphics binary too, a separate
+// unscoped future task).
 
 using json = nlohmann::json;
 
@@ -91,12 +94,42 @@ TEST_CASE("serialize emits exactly the approved field set, nothing more") {
     std::sort(keys.begin(), keys.end());
 
     std::vector<std::string> expected = {
-        "blackDisconnectMs", "blackMoves", "blackScore", "board", "cellStates",
-        "gameOver", "result", "whiteDisconnectMs", "whiteMoves", "whiteScore"
+        "activeMoves", "blackDisconnectMs", "blackMoves", "blackScore", "board",
+        "cellStates", "gameOver", "result", "whiteDisconnectMs", "whiteMoves",
+        "whiteScore"
     };
     std::sort(expected.begin(), expected.end());
 
     CHECK(keys == expected);
+}
+
+// Task I1: sparse activeMoves - only cells with cellStates=="move" ever
+// contribute an entry (see GameStateSerializer.hpp's own comment for why
+// this is sparse rather than a dense per-cell grid: bandwidth at the 60Hz
+// broadcast tick, worked out in docs/tasks/wire-protocol-move-progress-plan.md).
+
+TEST_CASE("serialize's activeMoves is empty when nothing is mid-move") {
+    auto snap = makeTestSnapshot(); // all cellStates "idle"
+    json j = json::parse(GameStateSerializer::serialize(snap));
+
+    CHECK(j.at("activeMoves").empty());
+}
+
+TEST_CASE("serialize's activeMoves reports from/to/progress for exactly the mid-move cell") {
+    GameSnapshot snap{};
+    snap.boardTokens = {{"wR", "."}, {".", "bK"}};
+    snap.cellStates = {{"move", "idle"}, {"idle", "idle"}};
+    snap.moveTargets = {{Position{1, 1}, Position{}}, {Position{}, Position{}}};
+    snap.moveProgress = {{0.42, 0.0}, {0.0, 0.0}};
+    json j = json::parse(GameStateSerializer::serialize(snap));
+
+    REQUIRE(j.at("activeMoves").size() == 1);
+    const auto& entry = j.at("activeMoves")[0];
+    CHECK(entry.at("from").at("row") == 0);
+    CHECK(entry.at("from").at("col") == 0);
+    CHECK(entry.at("to").at("row") == 1);
+    CHECK(entry.at("to").at("col") == 1);
+    CHECK(entry.at("progress") == doctest::Approx(0.42));
 }
 
 // Task D4: per-color disconnect countdown, present only while that color

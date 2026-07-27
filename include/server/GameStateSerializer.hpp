@@ -12,16 +12,24 @@
 //
 // Included: board tokens, cellStates, scores, move history, gameOver/result,
 // per-color disconnect countdown (Task D4, present only while that seat is
-// actually disconnected).
+// actually disconnected), and a sparse activeMoves list (Task I1 -
+// moveTargets/moveProgress for exactly the cells with cellStates=="move",
+// so the networked graphics client can slide pieces instead of snapping
+// between ticks - see docs/tasks/wire-protocol-move-progress-plan.md).
+// activeMoves is deliberately sparse rather than a dense per-cell grid -
+// most cells are idle at any given tick, and this broadcasts at 60Hz to
+// every connection in a session.
 //
 // Deliberately excluded (design decision, confirmed before this task
 // started):
-// - moveTargets/moveProgress/selected: per-frame interpolation/render-loop
-//   state, meaningless without a continuously-ticking client render loop.
-// - captureFlashes: same category as the above. The text-only shell
-//   client (Phase B) reads state via BoardPrinter, which has nothing to
-//   show a capture flash with. Revisit only if/when the graphics binary
-//   gets network support - a separate, unscoped future task.
+// - selected: per-connection UI-gesture state (which square this viewer
+//   has clicked), not shared game state - the networked graphics client
+//   reconstructs its own local selection instead (see
+//   NetworkClickHandler::pendingSelection()).
+// - captureFlashes: per-frame render-loop-only decoration. The text-only
+//   shell client (Phase B) reads state via BoardPrinter, which has nothing
+//   to show a capture flash with. Revisit only if/when it turns out to
+//   matter for the graphics binary too - a separate, unscoped future task.
 //
 // Uses nlohmann::json internally, but that type never appears in this
 // header - callers just get a plain string to send as a WS text frame.
