@@ -18,6 +18,12 @@ std::string formatTime(long long ms) {
 
 } // namespace
 
+std::string HudView::formatResult(const GameSnapshot& snap) {
+    if (snap.result == "White Wins") return snap.whiteName + " Wins";
+    if (snap.result == "Black Wins") return snap.blackName + " Wins";
+    return snap.result; // "Draw" (or anything unrecognized) passes through as-is
+}
+
 int HudView::visibleRows(int panelH) {
     int contentH = panelH - PANEL_HEADER_H - ROW_H; // header line + column-title row
     return std::max(0, contentH / ROW_H);
@@ -90,7 +96,7 @@ void HudView::drawGameOverBanner(Img& canvas, const GameSnapshot& snap, int boar
     Img banner(bannerW, bannerH, cv::Scalar(0, 0, 0, 170));
 
     const std::string title = "GAME OVER";
-    const std::string subtitle = snap.result;
+    const std::string subtitle = formatResult(snap);
     const double titleScale = 1.3;
     const int titleThickness = 3;
     const double subtitleScale = 0.8;

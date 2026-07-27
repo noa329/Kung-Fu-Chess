@@ -68,6 +68,13 @@ private:
     void drawCoordinates(Img& canvas, int boardW, int boardH) const;
     void drawGameOverBanner(Img& canvas, const GameSnapshot& snap, int boardW, int boardH) const;
 
+    // Client-side-only translation of GameSnapshot::result ("White Wins" /
+    // "Black Wins" / "Draw" - the wire protocol and GameEngine only ever
+    // know colors, correctly) into the winning player's username, using the
+    // same whiteName/blackName the name bars already display. GameEngine
+    // itself must stay color-only - see CLAUDE.md's layering rules.
+    static std::string formatResult(const GameSnapshot& snap);
+
     static int visibleRows(int panelH);
     static int clampScrollOffset(int offset, size_t totalRows, int visible);
 };
