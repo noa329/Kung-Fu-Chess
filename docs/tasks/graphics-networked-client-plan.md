@@ -1,22 +1,25 @@
 # Kung Fu Chess — graphics client goes networked (TODO / reference plan)
 
-> **Status: in progress, paused after H5.** **H1 through H5 are all done**
-> (see their rows below) — the graphics binary now plays a real game over
-> the wire end-to-end: login → menu → matchmaking/room-join → a live board
-> rendered from network state → clicks sent as wire commands. Along the way:
-> the user's own manual click-through of the H3b login/room flow found
-> **one real bug** (room creator's status screen showed a blank opponent
-> name — see the write-up right after the task table), fixed and verified.
+> **Status: in progress, paused after H5 + a room-flow regression fix.**
+> **H1 through H5 are all done** (see their rows below) — the graphics
+> binary now plays a real game over the wire end-to-end: login → menu →
+> matchmaking/room-join → a live board rendered from network state → clicks
+> sent as wire commands. Along the way, the user's own manual click-through
+> found and got fixed **two real bugs**, both in the room-creator's specific
+> path (see the two write-ups right after the task table): a blank opponent
+> name (H3b-era), and — found *after* H5 landed — creating a room jumped
+> straight past the "share this room ID" screen into the live board before
+> anyone could read the ID, which also left the HUD's own "Name:" bar blank.
 > `run_tests.exe`'s Smart App Control/Device Guard block from H3b's session
 > turned out to be transient — it ran clean again during H4 (253/253).
-> **One open verification item remains**: H3a's/H3b's own click-through gaps
-> are still open, now joined by H4/H5's own live gameplay screen — the
-> user's manual click-through (already in progress) is what confirms the
-> actual on-screen/interactive result; H4/H5 instead got a real end-to-end
-> *scripted* verification (a throwaway console program driving `OnlineClient`
-> directly against a live server — no GUI needed, since that class has no
-> OpenCV dependency) that confirmed the wire round-trip works: state
-> received, a move sent, the move resolved and reflected back.
+> **One open verification item remains**: the user's manual click-through
+> (already in progress, and what found both bugs above) is what confirms
+> the actual on-screen/interactive result for H3a through H5 combined; H4/H5
+> instead got a real end-to-end *scripted* verification (a throwaway console
+> program driving `OnlineClient` directly against a live server — no GUI
+> needed, since that class has no OpenCV dependency) that confirmed the wire
+> round-trip works: state received, a move sent, the move resolved and
+> reflected back.
 >
 > Pick up at **H6** (discrete sound/lifecycle wiring) or **H7** (resign UI +
 > disconnect countdown) when resuming — both depend on H5, which is done.
@@ -120,6 +123,12 @@ Root cause, in two parts, both fixed:
 2. **Client (`kungfu-graphics/cpp/src/main.cpp`)**: even with the server fix, the `"status_connected"` screen's loop never called `client.pollResponse()` again once reached — a follow-up `"joined"` message would have arrived and sat unconsumed forever, so the displayed status text would still never update. Fixed by polling once per frame on that screen and refreshing `opponentName`/`whiteUsername`/`blackUsername` from any response that arrives — a no-op for matchmaking/joiner, both of which already know their opponent the moment this screen is reached.
 
 Verified with a scripted two-connection test (ad hoc, not committed, reusing `scripts/ws_test_client.py`'s handshake/frame helpers — same "real sockets, not real terminals" convention `server-phase-plan.md` already uses for exactly this kind of multi-connection scenario) against a live, freshly-rebuilt `kungfu_server.exe`: connection A creates a room, connection B joins it, and A is confirmed to receive a follow-up `{"type":"joined","color":"white","opponent":"<B's username>",...}` message after the two periodic board ticks — exactly the message the fix adds, with the correct fields. `kungfu_server.exe` (CMake/Ninja) and `KungFuChess` (CMake/MSVC) both rebuilt clean. The client-side polling addition is a small, in-pattern change (mirrors every other screen's existing `pollResponse()` use) rather than new machinery, and wasn't independently re-verified by screenshot given this session's established GUI-automation flakiness — the user's own follow-up manual click-through is what confirms the visual result.
+
+**Second real regression, found by the user's own manual click-through of H5** (not hypothetical): creating a room jumped straight into the live board instead of staying on the "Room ID: XXXXX — share this with your opponent" screen, making the ID impossible to read/share. Root cause: H5's `"status_connected"` rewrite left that screen as soon as `hasSnapshot` became true — but `handleCreateRoom()` already broadcasts the freshly-loaded starting position immediately, alone, precisely so the creator isn't staring at nothing while waiting (a real, previously-relied-on server behavior, not new) — so for the room creator specifically, `hasSnapshot` flips true almost instantly, well before an opponent ever joins, and H5 had no other signal gating the transition to full board rendering. A second, related symptom the user flagged separately turned out to share this same root cause: the HUD's "Name:" bar showed blank instead of the player's own username, because `whiteUsername`/`blackUsername` are only populated by the room-creator's *follow-up* `"joined"` message (the fix two paragraphs up) — which the premature transition never waited for either.
+
+Fixed in `kungfu-graphics/cpp/src/main.cpp` only (no server change needed — the underlying wire behavior was already correct and is relied on by design): a new `waitingForOpponent` condition (`!roomId.empty() && opponentName.empty() && !skippedWaitingForOpponent`) isolates exactly the one path this can happen on — matchmaking never has a `roomId`, and a room *joiner's* own `"joined"` response already carries the opponent's name, so neither is ever affected. While true, the "share this room ID" status screen stays up (now `dismissible`, per the confirmed resolution: **either the opponent actually joins** — `opponentName` stops being blank the moment the follow-up `"joined"` arrives, clearing the condition on its own — **or the creator explicitly presses a key to view the board early**, setting a new `skippedWaitingForOpponent` flag that permanently opts out for the rest of this session; either way, `main()`'s normal poll-and-render loop underneath is untouched). Also hardened the name-bar fill-in to fall back to this client's own already-known `username` for its own seat whenever `whiteUsername`/`blackUsername` isn't populated yet (only reachable via the early-dismiss path — normally both names arrive together) — a player's own name should never be blank just because the opponent's still is.
+
+Verified by rebuilding `KungFuChess` (MSVC/CMake, clean) and a careful re-read of the new branch's logic against both paths (room creator with `roomId` set vs. matchmaking/joiner without one) — not re-verified by screenshot/click-through, for the same established reason as everywhere else in this session (real desktop GUI automation has proven unreliable here); the user, already mid-test when this was found, is re-confirming directly.
 
 ---
 

@@ -260,6 +260,17 @@ void runOnlineGame() {
     std::optional<NetworkController> networkController;
     GameSnapshot currentSnapshot{}; // empty board until the first real tick arrives
     bool hasSnapshot = false;
+    // Bugfix (regression from H5): a room creator's own board tick can
+    // arrive before anyone else joins (handleCreateRoom() broadcasts the
+    // freshly loaded starting position immediately - see its own comment -
+    // so the creator isn't staring at nothing while alone), so hasSnapshot
+    // alone was the wrong signal for leaving the "share this room ID"
+    // status screen - it left almost instantly, before the ID could be
+    // read. Set true only when the creator explicitly asks to see the
+    // board before an opponent has joined (see the "status_connected"
+    // branch below) - otherwise that screen stays up until the opponent
+    // actually joins (opponentName stops being blank).
+    bool skippedWaitingForOpponent = false;
     int64 lastTick = cv::getTickCount();
     const double tickFreq = cv::getTickFrequency();
 
@@ -391,10 +402,32 @@ void runOnlineGame() {
                 hasSnapshot = true;
             }
 
+            // Bugfix: only a room creator ever has both a roomId *and* a
+            // still-blank opponent at the same time (matchmaking has no
+            // roomId at all; a room joiner's own "joined" response already
+            // carries the opponent's name) - so this is specifically "the
+            // room exists, but no one's joined it yet," not a general
+            // "state not ready" case hasSnapshot already covers below.
+            bool waitingForOpponent = !roomId.empty() && opponentName.empty() && !skippedWaitingForOpponent;
+            if (waitingForOpponent) {
+                view.renderStatus(WINDOW_NAME, "Connected",
+                                   describeConnection(myColor, opponentName, roomId, whiteUsername, blackUsername)
+                                       + "\nWaiting for an opponent to join...\n"
+                                         "Press any key to view the board while you wait.",
+                                   true);
+                if (view.consumeBackRequest()) {
+                    // "Dismiss" means "show me the board early" here, not
+                    // "go back" - unlike every other screen's use of this
+                    // same signal (see OnlineMenuView's own doc comment).
+                    skippedWaitingForOpponent = true;
+                }
+                continue;
+            }
+
             if (!hasSnapshot) {
-                // A room's lone creator, or anyone else, briefly between
-                // "joined" and the session's first broadcastState() tick -
-                // both real (if short-lived) states, not an error.
+                // Briefly between "joined" and the session's first
+                // broadcastState() tick - a real (if short-lived) state,
+                // not an error.
                 view.renderStatus(WINDOW_NAME, "Connected",
                                    describeConnection(myColor, opponentName, roomId, whiteUsername, blackUsername)
                                        + "\nWaiting for the first game state...",
@@ -406,9 +439,14 @@ void runOnlineGame() {
             // wire (that data belongs to "joined"/room messages, not the
             // state-tick broadcast) - filled in here from what the login/
             // join flow already established, closing that gap now that
-            // there's a HUD on screen to show it in.
-            currentSnapshot.whiteName = whiteUsername;
-            currentSnapshot.blackName = blackUsername;
+            // there's a HUD on screen to show it in. Falls back to this
+            // client's own logged-in `username` for its own seat when the
+            // opponent isn't known yet (only reachable via the early-dismiss
+            // path above - normally both names are already known together,
+            // the instant opponentName stops being blank) - own name should
+            // never be blank just because the opponent's still is.
+            currentSnapshot.whiteName = !whiteUsername.empty() ? whiteUsername : (myColor == "white" ? username : "");
+            currentSnapshot.blackName = !blackUsername.empty() ? blackUsername : (myColor == "black" ? username : "");
             // Task H4: GameSnapshot::selected is never sent over the wire
             // either (Task H2 decision 1) - substituting this client's own
             // pending click reconstructs the highlight for a real player;
