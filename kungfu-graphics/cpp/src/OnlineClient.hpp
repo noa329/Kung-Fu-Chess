@@ -1,8 +1,11 @@
 #pragma once
 #include "GameEngine.hpp"
+#include "Events.hpp"
 #include <memory>
 #include <optional>
 #include <string>
+#include <variant>
+#include <vector>
 
 // docs/tasks/graphics-networked-client-plan.md, Task H3b: owns the real
 // websocketpp connection to kungfu_server for the graphics binary's Online
@@ -30,8 +33,9 @@
 // per the plan's confirmed decision. Task H5 extends this class to also
 // capture the periodic state-tick broadcasts via GameStateDeserializer
 // (net_client layer, Task H2) - see pollGameState() below - reusing this
-// same connection, not opening a second one. G4's discrete sound/lifecycle
-// pushes are still silently ignored here - that's Task H6's job.
+// same connection, not opening a second one. Task H6 further extends it to
+// queue G4's discrete sound/lifecycle pushes via NetworkEventParser (same
+// net_client layer) - see pollEvents() below.
 class OnlineClient {
 public:
     // Mirrors client/cli/main.cpp's own LoginState fields/meaning exactly,
@@ -101,6 +105,15 @@ public:
     // cache whatever it last got and keep rendering that every frame, not
     // treat a nullopt poll as "nothing to show."
     std::optional<GameSnapshot> pollGameState();
+
+    // Task H6: drains and returns every discrete sound/lifecycle event that
+    // arrived since the last poll, in arrival order - a real queue, unlike
+    // pollGameState()'s coalesced "latest value" slot, because every entry
+    // here must fire exactly once (a dropped capture-sound push, or a
+    // dropped game-end push, is a real bug, not a stale value that's fine
+    // to skip - see the plan's threading-model section). Empty if nothing
+    // arrived.
+    std::vector<std::variant<SoundEvent, GameLifecycleEvent>> pollEvents();
 
     // Whether the socket is currently open - independent of
     // pollConnectionOpened()'s one-shot initial result, this can flip

@@ -13,6 +13,7 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <variant>
 #include <opencv2/opencv.hpp>
 
 // Cwd-relative, same convention as the server's "data/kungfu_chess.db" and
@@ -242,6 +243,14 @@ void runOnlineGame() {
     OnlineMenuView view;
     client.connect(SERVER_URI);
 
+    // Task H6: SoundManager is a singleton shared with Local Play, but
+    // runLocalGame() (the only prior caller of setSoundsRoot()) never runs
+    // on this path - a player who only ever picks Online Play would
+    // otherwise hit playSound()'s untouched "assets/sounds" default and
+    // silently fail to resolve any file. No playMusic() call here though:
+    // background music is a Local Play concern this task doesn't touch.
+    SoundManager::instance().setSoundsRoot(SOUNDS_ROOT);
+
     // Task H5: same BoardView/HudView Local Play uses, fed from network
     // state instead of a local GameEngine - initialized upfront (same as
     // runLocalGame()) since it doesn't depend on anything network-related,
@@ -375,6 +384,26 @@ void runOnlineGame() {
             if (!client.isConnected()) {
                 screen = "disconnected";
                 continue;
+            }
+
+            // Task H6: drain every discrete sound/lifecycle push queued
+            // since last frame - same effect as runLocalGame()'s direct
+            // EventBus subscriptions, different trigger source (there's no
+            // local EventBus/GameEngine on this path, see OnlineClient's
+            // own header comment). Mirrors runLocalGame()'s
+            // onGameLifecycle subscriber exactly: only phase == "end"
+            // triggers the banner, matching GameLifecycleEvent's own
+            // documented meaning (a "start" push has no meaningful result
+            // string to show).
+            for (auto& event : client.pollEvents()) {
+                if (std::holds_alternative<SoundEvent>(event)) {
+                    SoundManager::instance().playSound(std::get<SoundEvent>(event).name + ".wav");
+                } else {
+                    const auto& lifecycle = std::get<GameLifecycleEvent>(event);
+                    if (lifecycle.phase == "end") {
+                        hud.playEndAnimation(lifecycle.result);
+                    }
+                }
             }
 
             // Bugfix: the room-creator path can receive a *second* "joined"

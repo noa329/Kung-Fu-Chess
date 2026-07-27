@@ -1,5 +1,6 @@
 #include "OnlineClient.hpp"
 #include "GameStateDeserializer.hpp"
+#include "NetworkEventParser.hpp"
 #include <websocketpp/config/asio_no_tls_client.hpp>
 #include <websocketpp/client.hpp>
 #include <nlohmann/json.hpp>
@@ -17,6 +18,7 @@ struct OnlineClient::Impl {
     std::optional<bool> connectionOpened;
     std::optional<OnlineClient::ServerResponse> pendingResponse;
     std::optional<GameSnapshot> latestSnapshot; // Task H5, see pollGameState()
+    std::vector<std::variant<SoundEvent, GameLifecycleEvent>> pendingEvents; // Task H6, see pollEvents()
     std::atomic<bool> connected{false};
     bool connectCalled = false;
 
@@ -87,10 +89,17 @@ struct OnlineClient::Impl {
                 std::lock_guard<std::mutex> lock(mtx);
                 latestSnapshot = std::move(snap);
             }
+        } else if (type == "sound" || type == "lifecycle") {
+            // Task H6: G4's discrete event pushes - queued (not coalesced),
+            // since every entry must fire exactly once (see pollEvents()'s
+            // own comment). NetworkEventParser does its own JSON parse
+            // internally, same "hand it the raw payload" pattern as
+            // GameStateDeserializer above.
+            if (auto ev = NetworkEventParser::parse(payload)) {
+                std::lock_guard<std::mutex> lock(mtx);
+                pendingEvents.push_back(std::move(*ev));
+            }
         }
-        // A G4 discrete "sound"/"lifecycle" push (type == "sound" or
-        // "lifecycle") is still deliberately ignored here - see this
-        // class's header comment; that's Task H6's job.
     }
 
     void send(const nlohmann::json& j) {
@@ -207,6 +216,13 @@ std::optional<GameSnapshot> OnlineClient::pollGameState() {
     if (!impl_->latestSnapshot.has_value()) return std::nullopt;
     GameSnapshot result = std::move(*impl_->latestSnapshot);
     impl_->latestSnapshot.reset();
+    return result;
+}
+
+std::vector<std::variant<SoundEvent, GameLifecycleEvent>> OnlineClient::pollEvents() {
+    std::lock_guard<std::mutex> lock(impl_->mtx);
+    std::vector<std::variant<SoundEvent, GameLifecycleEvent>> result;
+    result.swap(impl_->pendingEvents);
     return result;
 }
 
