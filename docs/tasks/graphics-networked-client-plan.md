@@ -73,14 +73,19 @@ background-thread-owns-the-socket pattern `client/cli` already established,
 
 Resolved during plan review, before any task started:
 
-1. **Render fidelity for networked play**: degraded-fidelity-first. The
-   wire protocol's `GameStateSerializer` deliberately excludes
-   `moveProgress`/`moveTargets` (per-frame slide interpolation) and
-   `captureFlashes` — see that header's own comment. Rather than extending
-   the wire protocol now, the networked graphics client's JSON→`GameSnapshot`
-   translator (H2) just defaults those fields, so pieces snap between ticks
-   instead of sliding and captures show no flash effect. Revisit only if
-   the degraded fidelity turns out to matter once it's actually played.
+1. **Render fidelity for networked play**: degraded-fidelity-first,
+   **revisited and resolved for `moveProgress`/`moveTargets` by
+   `docs/tasks/wire-protocol-move-progress-plan.md` (Tasks I1–I4)** once it
+   turned out to matter after real play — pieces now slide smoothly in
+   Online Play, confirmed by the user's own manual click-through, matching
+   Local Play exactly. Originally: the wire protocol's `GameStateSerializer`
+   deliberately excluded `moveProgress`/`moveTargets` (per-frame slide
+   interpolation) and `captureFlashes` — see that header's own comment —
+   and the networked graphics client's JSON→`GameSnapshot` translator (H2)
+   just defaulted those fields, so pieces snapped between ticks instead of
+   sliding. `captureFlashes` is **still** excluded/deferred — the
+   wire-protocol plan scoped itself to `moveProgress`/`moveTargets` only;
+   revisit `captureFlashes` separately if it turns out to matter too.
 2. **Keep both modes.** Local play (today's `GameEngine`-owned path) is
    **not** replaced — it stays exactly as-is, reachable behind a new
    startup choice. Online play is additive.
