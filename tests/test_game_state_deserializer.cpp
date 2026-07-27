@@ -100,6 +100,19 @@ TEST_CASE("deserialize defaults the fields the wire protocol never sends") {
     CHECK(snap->captureFlashes.empty());
     CHECK(snap->whiteName == "");
     CHECK(snap->blackName == "");
+}
+
+// Task I2: moveTargets/moveProgress are no longer unconditionally
+// defaulted - they're populated from the wire's sparse "activeMoves" list
+// (GameStateSerializer.hpp's own Task I1) when present. These two cases
+// cover "absent" (older server, or nothing mid-move - same sentinel this
+// deserializer always used) and "present" (real values land at the right
+// cell) separately, per docs/tasks/wire-protocol-move-progress-plan.md's
+// own I2 row.
+
+TEST_CASE("deserialize defaults moveTargets/moveProgress to the sentinel when activeMoves is absent") {
+    auto snap = GameStateDeserializer::deserialize(makeStateBroadcast()); // no "activeMoves" key
+    REQUIRE(snap.has_value());
 
     // Sized to match the board (2x2 in this fixture), every cell defaulted
     // - not left empty/mismatched, since BoardView indexes these by
@@ -109,6 +122,41 @@ TEST_CASE("deserialize defaults the fields the wire protocol never sends") {
     for (size_t r = 0; r < 2; ++r) {
         REQUIRE(snap->moveTargets[r].size() == 2);
         REQUIRE(snap->moveProgress[r].size() == 2);
+        for (size_t c = 0; c < 2; ++c) {
+            CHECK(snap->moveTargets[r][c] == Position{-1, -1});
+            CHECK(snap->moveProgress[r][c] == 0.0);
+        }
+    }
+}
+
+TEST_CASE("deserialize round-trips activeMoves into moveTargets/moveProgress at the right cell") {
+    json j = json::parse(makeStateBroadcast());
+    j["activeMoves"] = json::array({
+        {{"from", {{"row", 0}, {"col", 0}}}, {"to", {{"row", 1}, {"col", 1}}}, {"progress", 0.42}}
+    });
+    auto snap = GameStateDeserializer::deserialize(j.dump());
+    REQUIRE(snap.has_value());
+
+    CHECK(snap->moveTargets[0][0] == Position{1, 1});
+    CHECK(snap->moveProgress[0][0] == doctest::Approx(0.42));
+
+    // Every other cell is untouched by the (single) activeMoves entry -
+    // still at the sentinel default.
+    CHECK(snap->moveTargets[0][1] == Position{-1, -1});
+    CHECK(snap->moveTargets[1][0] == Position{-1, -1});
+    CHECK(snap->moveTargets[1][1] == Position{-1, -1});
+    CHECK(snap->moveProgress[0][1] == 0.0);
+}
+
+TEST_CASE("deserialize ignores an activeMoves entry with an out-of-bounds cell instead of throwing") {
+    json j = json::parse(makeStateBroadcast()); // 2x2 board
+    j["activeMoves"] = json::array({
+        {{"from", {{"row", 9}, {"col", 9}}}, {"to", {{"row", 1}, {"col", 1}}}, {"progress", 0.5}}
+    });
+    auto snap = GameStateDeserializer::deserialize(j.dump());
+    REQUIRE(snap.has_value());
+
+    for (size_t r = 0; r < 2; ++r) {
         for (size_t c = 0; c < 2; ++c) {
             CHECK(snap->moveTargets[r][c] == Position{-1, -1});
             CHECK(snap->moveProgress[r][c] == 0.0);

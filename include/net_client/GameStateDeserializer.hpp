@@ -13,22 +13,27 @@
 // existing type" call NetworkEventParser.hpp makes for SoundEvent/
 // GameLifecycleEvent.
 //
-// Three GameSnapshot fields never round-trip through this message at all,
-// deliberately defaulted rather than guessed at (plan decision 1,
-// "degraded-fidelity-first" - and see the plan's "three architectural
-// mismatches" section for the reasoning):
-//   - moveTargets/moveProgress: per-frame slide-interpolation state,
-//     GameStateSerializer.hpp's own comment documents these as
-//     render-loop-only and excluded on purpose.
-//   - captureFlashes: same excluded category as the above.
+// Two GameSnapshot fields never round-trip through this message at all,
+// deliberately defaulted rather than guessed at:
+//   - captureFlashes: GameStateSerializer.hpp's own comment documents this
+//     as excluded, render-loop-only decoration - still out of scope, see
+//     docs/tasks/wire-protocol-move-progress-plan.md's own "Out of scope"
+//     section.
 //   - selected: transient server-side state scoped to a single
 //     GameSession::handleCommand() call (two sequential
 //     GameEngine::select() calls resolve one move), not persistent
 //     per-connection "this player has square X highlighted" state - there
 //     is nothing meaningful to recover here even in principle.
-// Pieces will visibly snap between ticks instead of sliding, with no
-// capture-flash effect and no click-highlight, until/unless a later task
-// revisits wire fidelity.
+// Pieces will show no capture-flash effect and no click-highlight from
+// this message alone, until/unless a later task revisits those.
+//
+// moveTargets/moveProgress (Task I2): populated from the wire's sparse
+// "activeMoves" list (GameStateSerializer.hpp's own Task I1 addition) for
+// exactly the cells it names; every other cell defaults to
+// Position{-1,-1}/0.0 - the same sentinel this deserializer already used
+// for "no data at all" before I2 existed. A server that predates I1, or a
+// tick with nothing mid-move, leaves every cell at that same default, so
+// this is a strict extension of the wire format, not a breaking change.
 //
 // whiteName/blackName are also left at their default-constructed empty
 // string - this message never carries them (only the "joined"/room-flow
