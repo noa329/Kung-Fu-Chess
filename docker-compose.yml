@@ -1,0 +1,65 @@
+# T6, docs/tasks/docker-compose-plan.md - "small working version" for the
+# cloud-scaling assignment. kungfu_server stays one monolithic container
+# (no Gateway/Auth/Matchmaking split yet); postgres/redis are stood up per
+# Server_Design.md's direction but are not wired to anything yet - see the
+# plan doc's PostgreSQL/Redis sections for exactly what that does and does
+# not mean. No depends_on between services: there is no real runtime
+# coupling to express yet, and adding one would misrepresent that as
+# existing. Healthchecks below are for docker compose ps/observability
+# only, same reason.
+
+services:
+  kungfu_server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    ports:
+      - "9002:9002"
+    volumes:
+      # Survives `docker compose down`/`up` cycles - see "Key
+      # simplification: no C++ changes are required" in the plan doc for
+      # why no env vars are needed here.
+      - kungfu_data:/app/data
+    healthcheck:
+      # Only proves the listen socket on 9002 is open, not that the
+      # websocketpp/Asio event loop is actually still processing messages
+      # - see the plan doc's healthcheck caveat.
+      test: ["CMD", "nc", "-z", "localhost", "9002"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Schema-on-startup only (T5) - runs once, on an empty data
+      # directory. Present but empty: nothing in kungfu_server reads or
+      # writes through this yet.
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  kungfu_data:
+  pgdata:

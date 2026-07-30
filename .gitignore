@@ -49,3 +49,6 @@ server.log
 
 # --- Task C3: runtime SQLite DB, not source ---
 data/
+
+# --- T6 (docs/tasks/docker-compose-plan.md): Postgres credentials ---
+.env
