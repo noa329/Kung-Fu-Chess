@@ -1,0 +1,48 @@
+# Keeps the docker build context small and prevents stale local artifacts
+# from ever being baked into an image layer (T3, docs/tasks/docker-compose-plan.md).
+
+.git/
+.vscode/
+.idea/
+
+# Generated Visual Studio solution (see CLAUDE.md) - not needed by
+# server/Dockerfile's own cmake+ninja configure/build.
+build/
+build_verify/
+server/build/
+out/
+
+# OpenCV/graphics build - the server target has no graphics dependency.
+kungfu-graphics/
+
+# Compiled artifacts from local Makefile/CMake builds.
+*.exe
+*.o
+*.obj
+*.pdb
+*.ilk
+kungfu_chess
+run_tests.exe
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+*.vcxproj
+*.vcxproj.filters
+*.sln
+*.gcda
+*.gcno
+
+# Runtime SQLite DB + leftover test DB/log files - never bake local data
+# into an image; the real data/kungfu_chess.db is provided via a Compose
+# volume mount, not the image.
+data/
+test_ws_*.db
+test_ws_*.log
+*.log
+
+# Secrets - must never end up in a build context or image layer.
+.env
+
+docs/
+vpl_submission/
+kung_fu_chess_vpl.zip
